@@ -1,0 +1,27 @@
+[project]
+name = "sowl"
+version = "0.1.0"
+description = "Local-first personal AI agent: daemon + thin CLI/popup clients, built for low-spec machines"
+requires-python = ">=3.11"
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# Project name is "sowl" but the import package is "ag": hatchling must be told where it lives.
+[tool.hatch.build.targets.wheel]
+packages = ["src/ag"]
+
+[dependency-groups]
+dev = ["pytest", "hypothesis", "ruff"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+extend-select = ["I"]

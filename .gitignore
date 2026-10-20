@@ -1,0 +1,10 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+
+# Virtual envs
+.venv/
