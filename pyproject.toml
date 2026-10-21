@@ -3,7 +3,13 @@ name = "sowl"
 version = "0.1.0"
 description = "Local-first personal AI agent: daemon + thin CLI/popup clients, built for low-spec machines"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "typer>=0.27.3",
+]
+
+[project.scripts]
+ag = "ag.client.cli:main"
+agentd = "ag.daemon.cli:app"
 
 [build-system]
 requires = ["hatchling"]
