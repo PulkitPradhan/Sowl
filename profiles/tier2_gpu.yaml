@@ -1,0 +1,13 @@
+# Tier 2: 8GB VRAM GPU inference (e.g. RTX 5060 Laptop GPU, 8-9B models)
+name: tier2_gpu
+tier: 2
+model: "qwen2.5:0.5b"
+endpoint: http://localhost:11434/v1
+context_window: 8192
+wire_format: toon_in
+planning_mode: single_pass
+structured_output: true
+timeout_connect: 3.0
+timeout_read: 120.0
+retries: 2
+temperature: 0.0

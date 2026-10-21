@@ -1,0 +1,13 @@
+# Tier 1: CPU-only inference (recommended for 8GB+ RAM, no GPU)
+name: tier1_cpu
+tier: 1
+model: "smollm:135m"
+endpoint: http://localhost:11434/v1
+context_window: 4096
+wire_format: toon_in
+planning_mode: single_pass
+structured_output: true
+timeout_connect: 3.0
+timeout_read: 120.0
+retries: 2
+temperature: 0.0

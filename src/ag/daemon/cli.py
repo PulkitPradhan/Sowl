@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import os
-import time
 from pathlib import Path
 from typing import Annotated
 
 import typer
 
-from ag.daemon.server import AgentDaemon, get_default_socket_path
+from ag.daemon.server import AgentDaemon, get_default_socket_path, register_default_handlers
 
 app = typer.Typer(name="agentd", help="agentd: Background daemon for ag")
 
@@ -29,21 +28,7 @@ def start(
     """Start the agentd daemon process."""
     target_path = socket_path or get_default_socket_path()
     daemon = AgentDaemon(target_path)
-
-    start_time = time.time()
-
-    # Built-in handlers for Phase 1
-    daemon.register("ping", lambda params: "pong")
-    daemon.register("run", lambda params: {"echo": params})
-    daemon.register(
-        "status",
-        lambda params: {
-            "status": "running",
-            "pid": os.getpid(),
-            "uptime_seconds": round(time.time() - start_time, 2),
-            "socket": str(target_path),
-        },
-    )
+    register_default_handlers(daemon)
 
     typer.echo(f"Starting agentd (pid: {os.getpid()}) on socket: {target_path}")
 

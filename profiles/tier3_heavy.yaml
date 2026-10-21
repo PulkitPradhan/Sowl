@@ -1,0 +1,13 @@
+# Tier 3: 16GB+ VRAM GPU inference (fits 14B-32B models quantized)
+name: tier3_heavy
+tier: 3
+model: ""  # Set by user (e.g. qwen2.5:14b, qwen2.5:32b-q4)
+endpoint: http://localhost:11434/v1
+context_window: 16384
+wire_format: toon_in
+planning_mode: single_pass
+structured_output: true
+timeout_connect: 3.0
+timeout_read: 180.0
+retries: 2
+temperature: 0.0

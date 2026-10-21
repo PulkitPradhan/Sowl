@@ -8,7 +8,7 @@ import pytest
 from typer.testing import CliRunner
 
 from ag.client.cli import app
-from ag.daemon.server import AgentDaemon
+from ag.daemon.server import AgentDaemon, register_default_handlers
 
 runner = CliRunner()
 
@@ -19,10 +19,11 @@ def test_socket(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def cli_daemon(test_socket: Path):
+def cli_daemon(test_socket: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    test_ws = tmp_path / "ws"
+    monkeypatch.setenv("AG_WORKSPACE_DIR", str(test_ws))
     daemon = AgentDaemon(test_socket)
-    daemon.register("ping", lambda params: "pong")
-    daemon.register("run", lambda params: {"echo": params})
+    register_default_handlers(daemon, workspace_dir=test_ws)
 
     loop = asyncio.new_event_loop()
     ready_evt = threading.Event()
@@ -56,3 +57,25 @@ def test_cli_run_echo(cli_daemon: AgentDaemon, test_socket: Path):
     result = runner.invoke(app, ["--socket-path", str(test_socket), "run", "hello CLI"])
     assert result.exit_code == 0
     assert "hello CLI" in result.stdout
+
+
+def test_cli_model_list(cli_daemon: AgentDaemon, test_socket: Path):
+    result = runner.invoke(app, ["--socket-path", str(test_socket), "model", "list"])
+    assert result.exit_code == 0
+    assert "tier1_cpu" in result.stdout
+    assert "tier2_gpu" in result.stdout
+
+
+def test_cli_model_use(cli_daemon: AgentDaemon, test_socket: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    monkeypatch.setenv("AG_WORKSPACE_DIR", str(tmp_path / ".ag"))
+    result = runner.invoke(app, ["--socket-path", str(test_socket), "model", "use", "tier2_gpu"])
+    assert result.exit_code == 0
+    assert "Switched active profile to: tier2_gpu" in result.stdout
+
+
+def test_cli_doctor(test_socket: Path):
+    result = runner.invoke(app, ["--socket-path", str(test_socket), "doctor", "--no-bench"])
+    assert result.exit_code == 0
+    assert "System Diagnostics" in result.stdout
+    assert "Recommended Tier:" in result.stdout
+

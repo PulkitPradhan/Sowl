@@ -65,8 +65,8 @@ def test_ping_takes_under_50ms(running_daemon: AgentDaemon, socket_path: Path):
 def test_run_echo(running_daemon: AgentDaemon, socket_path: Path):
     async def _test():
         async with RpcClient(socket_path) as client:
-            result = await client.call("run", {"message": "hello Sowl"})
-            assert result == {"echo": {"message": "hello Sowl"}}
+            result = await client.call("run", {"message": "hello ag"})
+            assert result == {"echo": {"message": "hello ag"}}
 
     run_async(_test())
 

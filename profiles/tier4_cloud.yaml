@@ -1,0 +1,14 @@
+# Tier 4: Optional BYOK cloud endpoint (off by default)
+name: tier4_cloud
+tier: 4
+model: ""  # Set by user (e.g. gpt-4o-mini)
+endpoint: https://api.openai.com/v1
+context_window: 32768
+wire_format: toon_in
+planning_mode: single_pass
+structured_output: true
+timeout_connect: 5.0
+timeout_read: 120.0
+retries: 3
+temperature: 0.0
+api_key_env: OPENAI_API_KEY

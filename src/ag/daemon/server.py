@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import os
+import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
@@ -23,7 +25,122 @@ from ag.wire.rpc import (
 Handler = Callable[[Any], Any] | Callable[[Any], Awaitable[Any]]
 
 # Re-export for convenience
-__all__ = ["AgentDaemon", "get_default_socket_path"]
+__all__ = ["AgentDaemon", "get_default_socket_path", "register_default_handlers"]
+
+
+def register_default_handlers(
+    daemon: AgentDaemon,
+    workspace_dir: Path | None = None,
+    profiles_dir: Path | None = None,
+    fake_provider: Any | None = None,
+) -> None:
+    """Register built-in RPC method handlers for agentd."""
+    from ag.models.doctor import get_system_specs, list_server_models, recommend_tier
+    from ag.models.profile import (
+        get_active_profile,
+        list_profiles,
+        load_profile,
+        set_active_profile,
+    )
+    from ag.models.provider import OpenAIProvider
+
+    start_time = time.time()
+
+    daemon.register("ping", lambda params: "pong")
+
+    def _status_handler(params: Any) -> dict[str, Any]:
+        active_name = get_active_profile(workspace_dir)
+        return {
+            "status": "running",
+            "pid": os.getpid(),
+            "uptime_seconds": round(time.time() - start_time, 2),
+            "socket": str(daemon.socket_path),
+            "active_profile": active_name,
+        }
+
+    daemon.register("status", _status_handler)
+
+    def _model_list_handler(params: Any) -> list[dict[str, Any]]:
+        profiles = list_profiles(profiles_dir)
+        active_name = get_active_profile(workspace_dir)
+        return [
+            {
+                "name": p.name,
+                "tier": p.tier,
+                "model": p.model,
+                "endpoint": p.endpoint,
+                "active": (p.name == active_name),
+            }
+            for p in profiles
+        ]
+
+    daemon.register("model.list", _model_list_handler)
+
+    def _model_use_handler(params: Any) -> dict[str, Any]:
+        name = params.get("name") if isinstance(params, dict) else str(params)
+        profile = load_profile(name, profiles_dir=profiles_dir)
+        set_active_profile(profile.name, workspace_dir=workspace_dir)
+        return {"active_profile": profile.name}
+
+    daemon.register("model.use", _model_use_handler)
+
+    def _model_active_handler(params: Any) -> dict[str, Any] | None:
+        active_name = get_active_profile(workspace_dir)
+        if not active_name:
+            return None
+        try:
+            profile = load_profile(active_name, profiles_dir=profiles_dir)
+            return profile.model_dump()
+        except FileNotFoundError:
+            return None
+
+    daemon.register("model.active", _model_active_handler)
+
+    async def _doctor_handler(params: Any) -> dict[str, Any]:
+        specs = get_system_specs()
+        recommended = recommend_tier(specs.vram_gb, specs.ram_gb, specs.cpu_cores)
+        installed = await list_server_models()
+        return {
+            "specs": specs.model_dump(),
+            "recommended_tier": recommended,
+            "installed_models": installed,
+        }
+
+    daemon.register("doctor", _doctor_handler)
+
+    async def _run_handler(params: Any) -> Any:
+        prompt = ""
+        if isinstance(params, dict):
+            prompt = params.get("text") or params.get("message") or ""
+        elif isinstance(params, str):
+            prompt = params
+
+        if fake_provider is not None:
+            res = await fake_provider.chat([{"role": "user", "content": prompt}])
+            return res.model_dump()
+
+        active_name = get_active_profile(workspace_dir)
+        if not active_name:
+            # Preserve Phase 1 echo behavior when no active profile has been selected
+            return {"echo": params}
+
+        try:
+            profile = load_profile(active_name, profiles_dir=profiles_dir)
+        except FileNotFoundError:
+            return {"echo": params, "warning": f"Active profile '{active_name}' not found"}
+
+        if profile.tier == 0:
+            return {
+                "content": f"[Tier 0 Rule Engine] {prompt}",
+                "role": "assistant",
+                "tier": 0,
+            }
+
+        provider = OpenAIProvider(profile)
+        res = await provider.chat([{"role": "user", "content": prompt}])
+        return res.model_dump()
+
+    daemon.register("run", _run_handler)
 
 
 class AgentDaemon:

@@ -1,0 +1,9 @@
+# Tier 0: Stub profile (No-LLM / rule-based heuristic fallback)
+name: tier0_none
+tier: 0
+model: ""
+endpoint: ""
+context_window: 0
+wire_format: json
+planning_mode: rule_based
+structured_output: false

@@ -4,6 +4,10 @@ version = "0.1.0"
 description = "Local-first personal AI agent: daemon + thin CLI/popup clients, built for low-spec machines"
 requires-python = ">=3.11"
 dependencies = [
+    "httpx>=0.28.1",
+    "psutil>=7.2.2",  # Cross-platform RAM and system hardware detection for ag doctor
+    "pydantic>=2.14.1",
+    "pyyaml>=6.0.3",  # YAML configuration parser for profiles/*.yaml
     "typer>=0.27.3",
 ]
 

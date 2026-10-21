@@ -1,0 +1,12 @@
+name: fake-beta
+tier: 2
+model: fake-model-beta
+endpoint: http://fake.local/v1
+context_window: 8192
+wire_format: json
+planning_mode: single_pass
+structured_output: true
+timeout_connect: 3.0
+timeout_read: 120.0
+retries: 2
+temperature: 0.0
