@@ -97,6 +97,18 @@ class ToolManifest(BaseModel):
             },
         }
 
+    def validate_args(self, args: dict[str, Any]) -> None:
+        """Validate argument dictionary against tool schema with extra='forbid'."""
+        allowed_args = set(self.args.keys())
+        provided_args = set(args.keys())
+        extra_args = provided_args - allowed_args
+        if extra_args:
+            raise ValueError(f"Extra argument(s) forbidden: {sorted(extra_args)}")
+
+        missing_args = [name for name, field_def in self.args.items() if field_def.required and name not in args]
+        if missing_args:
+            raise ValueError(f"Missing required argument(s): {sorted(missing_args)}")
+
 
 class SkillManifest(BaseModel):
     """Schema for a complete skill manifest (manifest.toml)."""

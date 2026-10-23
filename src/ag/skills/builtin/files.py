@@ -23,7 +23,10 @@ def get_default_workspace_root() -> Path:
     """Return default workspace directory ~/.ag/workspace/ or fallback."""
     env_dir = os.environ.get("AG_WORKSPACE_DIR")
     if env_dir:
-        return Path(env_dir).expanduser() / "workspace"
+        candidate = Path(env_dir).expanduser()
+        if (candidate / "workspace").is_dir():
+            return candidate / "workspace"
+        return candidate
     target = Path("~/.ag/workspace").expanduser()
     return target
 

@@ -44,7 +44,11 @@ class ModelProfile(BaseModel):
     context_window: int = Field(default=4096, description="Context window token limit")
     wire_format: Literal["json", "toon_in", "toon_both"] = "toon_in"
     planning_mode: str = "single_pass"
+    max_plan_steps: int = 5
     structured_output: bool = True
+    thinking: Literal["off", "on"] = "off"
+    run_timeout: float = 120.0
+    planner_max_tokens: int = 400
     timeout_connect: float = 3.0
     timeout_read: float = 120.0
     retries: int = 2

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
 import os
 import time
 from collections.abc import Awaitable, Callable
@@ -37,12 +38,12 @@ def register_default_handlers(
     """Register built-in RPC method handlers for agentd."""
     from ag.models.doctor import get_system_specs, list_server_models, recommend_tier
     from ag.models.profile import (
+        ModelProfile,
         get_active_profile,
         list_profiles,
         load_profile,
         set_active_profile,
     )
-    from ag.models.provider import OpenAIProvider
 
     start_time = time.time()
 
@@ -108,37 +109,117 @@ def register_default_handlers(
 
     daemon.register("doctor", _doctor_handler)
 
-    async def _run_handler(params: Any) -> Any:
-        prompt = ""
-        if isinstance(params, dict):
-            prompt = params.get("text") or params.get("message") or ""
-        elif isinstance(params, str):
-            prompt = params
+    async def _run_confirm_handler(params: Any, writer: asyncio.StreamWriter | None = None) -> dict[str, Any]:
+        if not isinstance(params, dict):
+            raise JsonRpcError(code=-32602, message="Invalid params for run.confirm")
+        run_id = params.get("run_id")
+        step = params.get("step")
+        action_hash = params.get("action_hash")
+        approve = params.get("approve", False)
 
-        if fake_provider is not None:
-            res = await fake_provider.chat([{"role": "user", "content": prompt}])
-            return res.model_dump()
+        key = (run_id, step)
+        if key not in daemon.pending_confirms:
+            raise JsonRpcError(code=-32001, message=f"No pending confirmation found for run '{run_id}', step {step}")
+
+        orig_writer, expected_hash, fut = daemon.pending_confirms[key]
+        if writer is not None and orig_writer is not None and writer is not orig_writer:
+            raise JsonRpcError(code=-32002, message="Confirmation only accepted from originating connection")
+
+        if action_hash != expected_hash:
+            raise JsonRpcError(code=-32003, message="action_hash mismatch")
+
+        if not fut.done():
+            fut.set_result(bool(approve))
+        return {"confirmed": True}
+
+    daemon.register("run.confirm", _run_confirm_handler)
+
+    async def _run_cancel_handler(params: Any, writer: asyncio.StreamWriter | None = None) -> dict[str, Any]:
+        run_id = params.get("run_id") if isinstance(params, dict) else str(params)
+        task = daemon.active_runs.get(run_id)
+        if task and not task.done():
+            task.cancel()
+            return {"cancelled": True}
+        return {"cancelled": False, "message": "No active run found"}
+
+    daemon.register("run.cancel", _run_cancel_handler)
+
+    async def _run_handler(params: Any, writer: asyncio.StreamWriter | None = None) -> Any:
+        import secrets
+
+        from ag.planner.executor import Executor
+        from ag.skills.registry import SkillRegistry
+
+        task_text = ""
+        run_id = None
+        if isinstance(params, dict):
+            task_text = params.get("task") or params.get("text") or params.get("message") or ""
+            run_id = params.get("run_id")
+        elif isinstance(params, str):
+            task_text = params
+
+        run_id = run_id or f"run_{secrets.token_hex(6)}"
+
+        if daemon.model_lock.locked() and writer is not None:
+            queued_line = json.dumps({
+                "jsonrpc": "2.0",
+                "method": "run.event",
+                "params": {"run_id": run_id, "type": "queued"},
+            }, separators=(",", ":")) + "\n"
+            writer.write(queued_line.encode("utf-8"))
+            await writer.drain()
 
         active_name = get_active_profile(workspace_dir)
-        if not active_name:
-            # Preserve Phase 1 echo behavior when no active profile has been selected
-            return {"echo": params}
+        if not active_name and fake_provider is None:
+            return {"echo": task_text, "summary": task_text, "stop_reason": "done", "total_steps": 1, "duration_s": 0.0}
 
         try:
-            profile = load_profile(active_name, profiles_dir=profiles_dir)
+            profile = load_profile(active_name or "tier1_cpu", profiles_dir=profiles_dir)
         except FileNotFoundError:
-            return {"echo": params, "warning": f"Active profile '{active_name}' not found"}
+            profile = ModelProfile(name="default", tier=1)
 
-        if profile.tier == 0:
-            return {
-                "content": f"[Tier 0 Rule Engine] {prompt}",
-                "role": "assistant",
-                "tier": 0,
-            }
+        registry = SkillRegistry(workspace_dir=workspace_dir)
 
-        provider = OpenAIProvider(profile)
-        res = await provider.chat([{"role": "user", "content": prompt}])
-        return res.model_dump()
+        async def confirm_handler(confirm_event: dict[str, Any]) -> bool:
+            step = confirm_event["step"]
+            action_hash = confirm_event["action_hash"]
+            fut = asyncio.get_running_loop().create_future()
+            daemon.pending_confirms[(run_id, step)] = (writer, action_hash, fut)
+            try:
+                return await asyncio.wait_for(fut, timeout=60.0)
+            except TimeoutError:
+                return False
+            finally:
+                daemon.pending_confirms.pop((run_id, step), None)
+
+        async def event_handler(event_data: dict[str, Any]) -> None:
+            if writer is not None:
+                evt_line = json.dumps({
+                    "jsonrpc": "2.0",
+                    "method": "run.event",
+                    "params": event_data,
+                }, separators=(",", ":")) + "\n"
+                writer.write(evt_line.encode("utf-8"))
+                await writer.drain()
+
+        executor = Executor(
+            profile=profile,
+            registry=registry,
+            provider=fake_provider,
+            confirm_handler=confirm_handler,
+            event_handler=event_handler,
+        )
+
+        current_task = asyncio.current_task()
+        if current_task:
+            daemon.active_runs[run_id] = current_task
+
+        async with daemon.model_lock:
+            try:
+                res = await executor.run(task_text, run_id=run_id)
+                return res.model_dump()
+            finally:
+                daemon.active_runs.pop(run_id, None)
 
     daemon.register("run", _run_handler)
 
@@ -154,6 +235,9 @@ class AgentDaemon:
         self.server: asyncio.Server | None = None
         self._stop_event = asyncio.Event()
         self._active_writers: set[asyncio.StreamWriter] = set()
+        self.model_lock = asyncio.Lock()
+        self.active_runs: dict[str, asyncio.Task[Any]] = {}
+        self.pending_confirms: dict[tuple[str, int], tuple[asyncio.StreamWriter, str, asyncio.Future[bool]]] = {}
 
     def register(self, method: str, handler: Handler) -> None:
         """Register an RPC method handler."""
@@ -269,35 +353,7 @@ class AgentDaemon:
                     continue
 
                 if isinstance(msg, RpcRequest):
-                    handler = self.handlers.get(msg.method)
-                    if handler is None:
-                        response_bytes = format_error(
-                            code=METHOD_NOT_FOUND,
-                            message=f"Method '{msg.method}' not found",
-                            msg_id=msg.id,
-                        )
-                    else:
-                        try:
-                            if inspect.iscoroutinefunction(handler):
-                                result = await handler(msg.params)
-                            else:
-                                result = handler(msg.params)
-                            response_bytes = format_response(result=result, msg_id=msg.id)
-                        except JsonRpcError as err:
-                            response_bytes = format_error(
-                                code=err.code,
-                                message=err.message,
-                                data=err.data,
-                                msg_id=msg.id,
-                            )
-                        except Exception as err:  # noqa: BLE001
-                            response_bytes = format_error(
-                                code=INTERNAL_ERROR,
-                                message=f"Internal error in '{msg.method}': {err}",
-                                msg_id=msg.id,
-                            )
-                    writer.write(response_bytes)
-                    await writer.drain()
+                    asyncio.create_task(self._dispatch_request(msg, writer))
         except (ConnectionResetError, BrokenPipeError):
             pass
         finally:
@@ -307,6 +363,50 @@ class AgentDaemon:
                 await writer.wait_closed()
             except (ConnectionError, BrokenPipeError):
                 pass
+
+    async def _dispatch_request(
+        self,
+        msg: RpcRequest,
+        writer: asyncio.StreamWriter,
+    ) -> None:
+        handler = self.handlers.get(msg.method)
+        if handler is None:
+            response_bytes = format_error(
+                code=METHOD_NOT_FOUND,
+                message=f"Method '{msg.method}' not found",
+                msg_id=msg.id,
+            )
+        else:
+            try:
+                sig = inspect.signature(handler)
+                if "writer" in sig.parameters:
+                    res_val = handler(msg.params, writer=writer)
+                else:
+                    res_val = handler(msg.params)
+
+                if inspect.isawaitable(res_val):
+                    result = await res_val
+                else:
+                    result = res_val
+                response_bytes = format_response(result=result, msg_id=msg.id)
+            except JsonRpcError as err:
+                response_bytes = format_error(
+                    code=err.code,
+                    message=err.message,
+                    data=err.data,
+                    msg_id=msg.id,
+                )
+            except Exception as err:  # noqa: BLE001
+                response_bytes = format_error(
+                    code=INTERNAL_ERROR,
+                    message=f"Internal error in '{msg.method}': {err}",
+                    msg_id=msg.id,
+                )
+        try:
+            writer.write(response_bytes)
+            await writer.drain()
+        except (ConnectionError, BrokenPipeError):
+            pass
 
     async def serve_forever(self) -> None:
         """Run the daemon server until stopped."""

@@ -23,6 +23,11 @@ class BenchmarkResult(BaseModel):
     ttft_ms: float
     tokens_per_sec: float
     tokens_generated: int
+    content_tokens_per_sec: float = 0.0
+    reasoning_tokens_per_sec: float = 0.0
+    reasoning_tokens: int = 0
+    cpu_warning: bool = False
+    context_warning: str | None = None
     server_tokens_per_sec: float | None = None
     server_usage: dict[str, Any] | None = None
 
@@ -118,6 +123,8 @@ async def benchmark_endpoint(
     model: str = "",
     api_key: str | None = None,
     client: httpx.AsyncClient | None = None,
+    tier: int | None = None,
+    profile_context: int | None = None,
 ) -> BenchmarkResult:
     """Benchmark model endpoint with warm-up, fixed prompt, temperature 0, and token timing."""
     url = f"{endpoint.rstrip('/')}/chat/completions"
@@ -158,15 +165,31 @@ async def benchmark_endpoint(
         data = resp.json()
         usage_data = data.get("usage", {})
         completion_tokens = usage_data.get("completion_tokens", 0)
+        comp_details = usage_data.get("completion_tokens_details") or {}
+        reasoning_tokens = comp_details.get("reasoning_tokens", 0)
+        content_tokens = max(0, completion_tokens - reasoning_tokens)
 
         # Estimate TTFT as initial response time portion
         ttft_ms = round(total_time * 1000.0 * 0.25, 2)  # conservative estimate
         tokens_per_sec = round(completion_tokens / total_time, 2) if total_time > 0 else 0.0
+        content_tokens_per_sec = round(content_tokens / total_time, 2) if total_time > 0 else 0.0
+        reasoning_tokens_per_sec = round(reasoning_tokens / total_time, 2) if total_time > 0 else 0.0
+
+        cpu_warning = bool(tier is not None and tier >= 2 and tokens_per_sec < 10.0)
+        context_warning = None
+        if profile_context is not None:
+            # Check server context window if model info available
+            pass
 
         return BenchmarkResult(
             ttft_ms=ttft_ms,
             tokens_per_sec=tokens_per_sec,
             tokens_generated=completion_tokens,
+            content_tokens_per_sec=content_tokens_per_sec,
+            reasoning_tokens_per_sec=reasoning_tokens_per_sec,
+            reasoning_tokens=reasoning_tokens,
+            cpu_warning=cpu_warning,
+            context_warning=context_warning,
             server_usage=usage_data,
         )
 

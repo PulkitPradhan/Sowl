@@ -72,9 +72,18 @@ class Skill(BaseModel):
 class SkillRegistry:
     """Discovers, validates, and manages skills and their executable tools."""
 
-    def __init__(self, search_dirs: list[Path] | None = None) -> None:
+    def __init__(
+        self,
+        search_dirs: list[Path] | None = None,
+        workspace_dir: Path | None = None,
+    ) -> None:
         if search_dirs is not None:
             self.search_dirs = [Path(p) for p in search_dirs]
+        elif workspace_dir is not None:
+            self.search_dirs = [
+                get_default_package_skills_dir(),
+                Path(workspace_dir).expanduser() / "skills",
+            ]
         else:
             self.search_dirs = [
                 get_default_package_skills_dir(),
@@ -128,6 +137,14 @@ class SkillRegistry:
     def get_skill(self, name: str) -> Skill | None:
         """Retrieve a skill by name."""
         return self.skills.get(name)
+
+    def get_tools(self) -> dict[str, ToolManifest]:
+        """Return a mapping of fully-qualified tool name to ToolManifest."""
+        tools: dict[str, ToolManifest] = {}
+        for skill in self.skills.values():
+            for tool in skill.tools:
+                tools[tool.name] = tool
+        return tools
 
     def list_skills(self) -> list[Skill]:
         """Return list of all successfully loaded skills."""

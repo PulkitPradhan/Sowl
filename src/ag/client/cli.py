@@ -74,34 +74,135 @@ def get_app():
 
     @app.command()
     def run(
-        text: Annotated[str, typer.Argument(help="Text to send to agentd")],
+        text: Annotated[str, typer.Argument(help="Task or instruction to execute")],
     ) -> None:
-        """Send text to agentd (Phase 1 echo)."""
-        async def _run():
-            async with RpcClient(state["socket_path"]) as client:
-                return await client.call("run", {"text": text})
+        """Execute an autonomous agent task with streaming steps, confirmation, and trace logging."""
+        import secrets
+        import socket
 
-        try:
-            res = asyncio.run(_run())
-            if isinstance(res, (dict, list)):
-                typer.echo(json.dumps(res, indent=2))
-            else:
-                typer.echo(str(res))
-        except FileNotFoundError:
-            typer.secho(
-                f"Error: agentd socket not found at {state['socket_path']}. Is agentd running?",
-                fg=typer.colors.RED,
-            )
-            raise typer.Exit(code=1)
-        except ConnectionRefusedError:
-            typer.secho(
-                f"Error: Connection refused at {state['socket_path']}. agentd may have terminated.",
-                fg=typer.colors.RED,
-            )
-            raise typer.Exit(code=1)
-        except RpcRemoteError as err:
-            typer.secho(f"RPC Error: {err}", fg=typer.colors.RED)
-            raise typer.Exit(code=1)
+        from ag.wire.rpc import format_request
+
+        target = Path(state["socket_path"]).expanduser()
+        current_task = text
+
+        while True:
+            sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            try:
+                sock.connect(str(target))
+            except (FileNotFoundError, ConnectionRefusedError):
+                typer.secho(
+                    f"Error: agentd socket not found at {target}. Is agentd running? Start it with 'ag daemon start'.",
+                    fg=typer.colors.RED,
+                )
+                raise typer.Exit(code=1)
+
+            run_id = f"run_{secrets.token_hex(6)}"
+            req_bytes = format_request("run", {"task": current_task, "run_id": run_id}, msg_id=1)
+            sock.sendall(req_bytes)
+
+            buffer = b""
+            final_result = None
+
+            try:
+                while True:
+                    chunk = sock.recv(4096)
+                    if not chunk:
+                        break
+                    buffer += chunk
+                    while b"\n" in buffer:
+                        line, buffer = buffer.split(b"\n", 1)
+                        if not line.strip():
+                            continue
+                        msg = json.loads(line.decode("utf-8"))
+
+                        # Handle notifications (streaming events)
+                        if msg.get("method") == "run.event":
+                            evt = msg.get("params", {})
+                            evt_type = evt.get("type")
+
+                            if evt_type == "queued":
+                                typer.secho("Agent is queued waiting for model lock...", fg=typer.colors.YELLOW)
+                            elif evt_type == "step":
+                                act = evt.get("action", {})
+                                kind = act.get("kind", "")
+                                tool_name = act.get("tool", "")
+                                if kind == "tool":
+                                    typer.secho(f"\n[Step {evt.get('step')}] Tool: {tool_name}", fg=typer.colors.CYAN)
+                                    args_str = json.dumps(act.get("args", {}), indent=2)
+                                    typer.echo(f"  Args: {args_str}")
+                                elif kind == "done":
+                                    typer.secho(f"\n[Done] {act.get('summary')}", fg=typer.colors.GREEN)
+                                elif kind == "ask":
+                                    typer.secho(f"\n[Ask] {act.get('question')}", fg=typer.colors.MAGENTA)
+                            elif evt_type == "observation":
+                                obs = evt.get("observation", "")
+                                preview = obs[:200] + "..." if len(obs) > 200 else obs
+                                typer.echo(f"  ↳ Obs: {preview}")
+                            elif evt_type == "confirm":
+                                tool = evt.get("tool")
+                                risk = evt.get("risk", "R1")
+                                host = evt.get("hostname")
+                                host_info = f" ({host})" if host else ""
+                                typer.secho(f"\n⚠️  [Confirmation Required] Tool: {tool} [{risk}]{host_info}", fg=typer.colors.YELLOW, bold=True)
+                                typer.echo(f"  Arguments: {json.dumps(evt.get('args', {}), indent=2)}")
+                                resp = typer.prompt("  Approve execution? [y/N]", default="n").strip().lower()
+                                approved = resp in ("y", "yes")
+
+                                confirm_req = format_request(
+                                    "run.confirm",
+                                    {
+                                        "run_id": evt.get("run_id"),
+                                        "step": evt.get("step"),
+                                        "action_hash": evt.get("action_hash"),
+                                        "approve": approved,
+                                    },
+                                    msg_id=2,
+                                )
+                                sock.sendall(confirm_req)
+
+                        # Handle final response
+                        elif msg.get("id") == 1:
+                            if "error" in msg:
+                                typer.secho(f"\nRun Error: {msg['error'].get('message')}", fg=typer.colors.RED)
+                                raise typer.Exit(code=1)
+                            final_result = msg.get("result")
+                            break
+                    if final_result is not None:
+                        break
+
+            except KeyboardInterrupt:
+                typer.secho("\nCancelling run...", fg=typer.colors.YELLOW)
+                cancel_req = format_request("run.cancel", {"run_id": run_id}, msg_id=99)
+                try:
+                    sock.sendall(cancel_req)
+                except Exception:  # noqa: BLE001, S110
+                    pass
+                raise typer.Exit(code=130)
+            finally:
+                sock.close()
+
+            if not final_result:
+                break
+
+            stop_reason = final_result.get("stop_reason")
+            summary = final_result.get("summary")
+
+            if stop_reason == "ask":
+                question = final_result.get("question") or summary
+                typer.secho(f"\nAgent asked: {question}", fg=typer.colors.MAGENTA, bold=True)
+                answer = typer.prompt("Your Answer").strip()
+                if not answer:
+                    break
+                current_task = f"{current_task}\nQuestion: {question}\nAnswer: {answer}"
+                typer.echo("Continuing task with your answer...")
+                continue
+
+            typer.echo("\n" + "=" * 50)
+            typer.secho(f"Stop Reason: {stop_reason}", fg=typer.colors.GREEN if stop_reason == "done" else typer.colors.YELLOW)
+            typer.echo(f"Summary:     {summary}")
+            typer.echo(f"Total Steps: {final_result.get('total_steps')} in {final_result.get('duration_s')}s")
+            typer.echo("=" * 50)
+            break
 
     @app.command()
     def status() -> None:
@@ -250,18 +351,34 @@ def get_app():
 
         # Benchmark if requested and server models available
         if not no_bench:
-            bench_model = active_model or (installed_models[0] if installed_models else None)
-            if bench_model and installed_models:
-                typer.echo(f"\nRunning benchmark on model '{bench_model}' (warm-up + fixed prompt, ~100 tokens)...")
-                try:
-                    bench = asyncio.run(benchmark_endpoint(endpoint=endpoint, model=bench_model))
-                    typer.echo(f"  Estimated TTFT:    {bench.ttft_ms:.2f} ms")
-                    typer.echo(f"  Throughput:        {bench.tokens_per_sec:.2f} tokens/sec")
-                    typer.echo(f"  Tokens Generated:  {bench.tokens_generated}")
-                except Exception as err:  # noqa: BLE001
-                    typer.secho(f"  Benchmark skipped: {err}", fg=typer.colors.YELLOW)
+            if not active_name:
+                typer.echo("\n  Benchmark skipped: No active profile selected. Select one with 'ag model use <name>'.")
+            elif not active_model:
+                typer.echo(f"\n  Benchmark skipped: Active profile '{active_name}' has no model specified.")
+            elif active_model not in installed_models:
+                typer.secho(f"\n  Warning: Active profile model '{active_model}' is not in installed models: {', '.join(installed_models)}", fg=typer.colors.YELLOW)
             else:
-                typer.echo("\n  Benchmark skipped: No model server reachable or no models installed.")
+                typer.echo(f"\nRunning benchmark on active model '{active_model}' (warm-up + fixed prompt, ~100 tokens)...")
+                try:
+                    active_prof = load_profile(active_name)
+                    bench = asyncio.run(benchmark_endpoint(
+                        endpoint=endpoint,
+                        model=active_model,
+                        tier=active_prof.tier,
+                        profile_context=active_prof.context_window,
+                    ))
+                    typer.echo(f"  Estimated TTFT:         {bench.ttft_ms:.2f} ms")
+                    typer.echo(f"  Total Throughput:       {bench.tokens_per_sec:.2f} tokens/sec")
+                    typer.echo(f"  Content Throughput:     {bench.content_tokens_per_sec:.2f} tokens/sec")
+                    if bench.reasoning_tokens > 0:
+                        typer.echo(f"  Reasoning Throughput:   {bench.reasoning_tokens_per_sec:.2f} tokens/sec ({bench.reasoning_tokens} reasoning tokens)")
+                    typer.echo(f"  Tokens Generated:       {bench.tokens_generated}")
+                    if bench.cpu_warning:
+                        typer.secho("  ⚠️ Warning: Model throughput is unusually low; it may be running on CPU rather than GPU.", fg=typer.colors.YELLOW)
+                    if bench.context_warning:
+                        typer.secho(f"  ⚠️ Warning: {bench.context_warning}", fg=typer.colors.YELLOW)
+                except Exception as err:  # noqa: BLE001
+                    typer.secho(f"  Benchmark error: {err}", fg=typer.colors.YELLOW)
         typer.echo("=" * 50 + "\n")
 
     @app.command(name="wire")
@@ -409,6 +526,46 @@ def get_app():
 
         typer.echo("\n--- SKILL.md Instructions ---")
         typer.echo(skill.get_instructions())
+        typer.echo("=" * 60 + "\n")
+
+    # -------------------------------------------------------------------------
+    # ag trace
+    # -------------------------------------------------------------------------
+    trace_app = typer.Typer(name="trace", help="Inspect agent execution traces")
+    app.add_typer(trace_app)
+
+    @trace_app.command("last")
+    def trace_last() -> None:
+        """Display the most recent execution trace."""
+        from ag.planner.trace import get_default_traces_dir, list_traces, load_last_trace
+
+        traces_dir = get_default_traces_dir()
+        files = list_traces(traces_dir)
+        if not files:
+            typer.echo("No traces found.")
+            return
+
+        records = load_last_trace(traces_dir)
+        typer.echo(f"\n[Trace: {files[0].stem}]")
+        typer.echo("=" * 60)
+        for r in records:
+            r_type = r.get("type")
+            if r_type == "init":
+                typer.echo(f"Task:      {r.get('task')}")
+                typer.echo(f"Profile:   {r.get('profile')}")
+            elif r_type == "step":
+                act = r.get("action", {})
+                typer.echo(f"\nStep {r.get('step')}: {act.get('kind')} {act.get('tool', '')}")
+                obs_sum = r.get("observation_summary", "")
+                if obs_sum:
+                    typer.echo(f"  Obs:     {obs_sum}")
+                usage = r.get("usage", {})
+                typer.echo(f"  Latency: {r.get('latency_ms')}ms | Usage: {usage}")
+            elif r_type == "done":
+                typer.echo("\n" + "-" * 60)
+                typer.echo(f"Stop Reason: {r.get('stop_reason')}")
+                typer.echo(f"Summary:     {r.get('summary')}")
+                typer.echo(f"Total Steps: {r.get('total_steps')} | Duration: {r.get('duration_s')}s")
         typer.echo("=" * 60 + "\n")
 
     _app = app

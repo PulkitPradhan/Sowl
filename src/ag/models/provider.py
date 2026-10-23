@@ -16,6 +16,8 @@ class TokenUsage(BaseModel):
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
+    reasoning_tokens: int = 0
+    cached_tokens: int = 0
 
 
 class ModelResponse(BaseModel):
@@ -25,6 +27,7 @@ class ModelResponse(BaseModel):
     usage: TokenUsage = Field(default_factory=TokenUsage)
     ttft_ms: float = 0.0
     tokens_per_sec: float = 0.0
+    reasoning_tokens_per_sec: float = 0.0
     parsed: Any | None = None
 
 
@@ -73,10 +76,28 @@ class FakeModelProvider(ModelProvider):
         content = self.responses.pop(0) if self.responses else self.default_response
 
         parsed = None
-        if schema is not None and isinstance(schema, type) and issubclass(schema, BaseModel):
+        if schema is not None:
+            from pydantic import TypeAdapter
             try:
-                parsed = schema.model_validate_json(content)
-            except ValidationError as err:
+                adapter = TypeAdapter(schema)
+                try:
+                    parsed = adapter.validate_json(content)
+                except ValidationError:
+                    import json
+                    raw_data = json.loads(content)
+                    if isinstance(raw_data, dict) and "kind" not in raw_data:
+                        if "tool" in raw_data:
+                            raw_data["kind"] = "tool"
+                        elif "question" in raw_data:
+                            raw_data["kind"] = "ask"
+                        elif "summary" in raw_data:
+                            raw_data["kind"] = "done"
+                        elif "steps" in raw_data:
+                            raw_data["kind"] = "plan"
+                        parsed = adapter.validate_python(raw_data)
+                    else:
+                        raise
+            except Exception as err:
                 raise SchemaValidationError(f"Fake response failed schema validation: {err}") from err
 
         usage = TokenUsage(
@@ -121,27 +142,31 @@ class OpenAIProvider(ModelProvider):
             "temperature": self.profile.temperature,
         }
 
+        if self.profile.thinking == "off":
+            payload["reasoning_effort"] = "none"
+
         request_has_schema = False
         if schema is not None and self.profile.structured_output:
             request_has_schema = True
             if isinstance(schema, type) and issubclass(schema, BaseModel):
-                payload["response_format"] = {
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": schema.__name__,
-                        "schema": schema.model_json_schema(),
-                        "strict": True,
-                    },
-                }
+                json_schema_dict = schema.model_json_schema()
+                schema_name = schema.__name__
             elif isinstance(schema, dict):
-                payload["response_format"] = {
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": "response_schema",
-                        "schema": schema,
-                        "strict": True,
-                    },
-                }
+                json_schema_dict = schema
+                schema_name = "response_schema"
+            else:
+                from pydantic import TypeAdapter
+                json_schema_dict = TypeAdapter(schema).json_schema()
+                schema_name = "response_schema"
+
+            payload["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": schema_name,
+                    "schema": json_schema_dict,
+                    "strict": True,
+                },
+            }
 
         headers: dict[str, str] = {"Content-Type": "application/json"}
         api_key = self.profile.get_api_key()
@@ -185,25 +210,52 @@ class OpenAIProvider(ModelProvider):
 
         choice = choices[0]
         message = choice.get("message", {})
-        content = message.get("content", "")
+        content = message.get("content") or ""
         role = message.get("role", "assistant")
-        finish_reason = choice.get("finish_reason")
+        finish_reason = choice.get("finish_reason") or "stop"
 
         raw_usage = data.get("usage", {})
+        comp_details = raw_usage.get("completion_tokens_details") or {}
+        reasoning_tokens = comp_details.get("reasoning_tokens", 0)
+        prompt_details = raw_usage.get("prompt_tokens_details") or {}
+        cached_tokens = prompt_details.get("cached_tokens", 0)
+
         usage = TokenUsage(
             prompt_tokens=raw_usage.get("prompt_tokens", 0),
             completion_tokens=raw_usage.get("completion_tokens", 0),
             total_tokens=raw_usage.get("total_tokens", 0),
+            reasoning_tokens=reasoning_tokens,
+            cached_tokens=cached_tokens,
         )
 
-        tokens_per_sec = (usage.completion_tokens / elapsed) if elapsed > 0 else 0.0
+        content_tokens = max(0, usage.completion_tokens - reasoning_tokens)
+        tokens_per_sec = (content_tokens / elapsed) if elapsed > 0 else 0.0
+        reasoning_tokens_per_sec = (reasoning_tokens / elapsed) if elapsed > 0 else 0.0
 
         parsed = None
-        if schema is not None and isinstance(schema, type) and issubclass(schema, BaseModel):
+        if schema is not None:
+            from pydantic import TypeAdapter
             try:
-                parsed = schema.model_validate_json(content)
-            except ValidationError as err:
-                raise SchemaValidationError(f"Failed to validate response against {schema.__name__}: {err}") from err
+                adapter = TypeAdapter(schema)
+                try:
+                    parsed = adapter.validate_json(content)
+                except ValidationError:
+                    import json
+                    raw_data = json.loads(content)
+                    if isinstance(raw_data, dict) and "kind" not in raw_data:
+                        if "tool" in raw_data:
+                            raw_data["kind"] = "tool"
+                        elif "question" in raw_data:
+                            raw_data["kind"] = "ask"
+                        elif "summary" in raw_data:
+                            raw_data["kind"] = "done"
+                        elif "steps" in raw_data:
+                            raw_data["kind"] = "plan"
+                        parsed = adapter.validate_python(raw_data)
+                    else:
+                        raise
+            except Exception as err:
+                raise SchemaValidationError(f"Failed to validate response against schema: {err}") from err
 
         return ModelResponse(
             content=content,
@@ -212,5 +264,6 @@ class OpenAIProvider(ModelProvider):
             usage=usage,
             ttft_ms=round(ttft_ms, 2),
             tokens_per_sec=round(tokens_per_sec, 2),
+            reasoning_tokens_per_sec=round(reasoning_tokens_per_sec, 2),
             parsed=parsed,
         )
