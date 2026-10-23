@@ -1,0 +1,17 @@
+name = "browser"
+summary = "Open URLs in web browser (restricted to http and https)"
+triggers = ["open url", "browse", "view web", "open site", "visit"]
+examples = ["Open https://example.com in browser", "Browse documentation"]
+
+[[tools]]
+name = "browser.open_url"
+summary = "Open an http or https URL in the default web browser"
+risk = "R1"
+handler = "ag.skills.builtin.browser:open_url"
+pre_conditions = ["valid_url"]
+post_conditions = ["url_opened"]
+
+[tools.args.url]
+type = "string"
+description = "HTTP or HTTPS URL to open"
+required = true

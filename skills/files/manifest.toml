@@ -1,0 +1,31 @@
+name = "files"
+summary = "Read and list workspace files securely"
+triggers = ["read file", "list files", "directory", "show file", "cat"]
+examples = ["Read file notes.txt", "List files in src/"]
+
+[[tools]]
+name = "files.read"
+summary = "Read text file contents capped at 100 KB within workspace"
+risk = "R0"
+handler = "ag.skills.builtin.files:read_file"
+pre_conditions = ["file_exists"]
+post_conditions = ["content_returned"]
+
+[tools.args.path]
+type = "string"
+description = "Relative path of file to read"
+required = true
+
+[[tools]]
+name = "files.list"
+summary = "List directory files and folders within workspace"
+risk = "R0"
+handler = "ag.skills.builtin.files:list_files"
+pre_conditions = ["directory_exists"]
+post_conditions = ["entries_returned"]
+
+[tools.args.path]
+type = "string"
+description = "Directory path to list"
+required = false
+default = "."

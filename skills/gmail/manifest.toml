@@ -1,0 +1,27 @@
+name = "gmail"
+summary = "Draft emails in Gmail compose (opens prefilled draft, never sends)"
+triggers = ["draft email", "compose email", "send email", "write email"]
+examples = ["Compose email to user@test.com with subject Greetings", "Draft email"]
+
+[[tools]]
+name = "gmail.compose"
+summary = "Open prefilled Gmail compose draft URL in browser (never sends)"
+risk = "R1"
+handler = "ag.skills.builtin.gmail:compose_email"
+pre_conditions = ["valid_recipient"]
+post_conditions = ["draft_opened"]
+
+[tools.args.to]
+type = "string"
+description = "Recipient email address"
+required = true
+
+[tools.args.subject]
+type = "string"
+description = "Email subject line"
+required = true
+
+[tools.args.body]
+type = "string"
+description = "Email body text (capped at 2000 characters)"
+required = true

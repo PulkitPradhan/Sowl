@@ -1,0 +1,17 @@
+name = "echo"
+summary = "Echo inputs for safe automated testing"
+triggers = ["echo", "test tool", "ping tool"]
+examples = ["Echo hello", "Test echo with test string"]
+
+[[tools]]
+name = "echo.echo"
+summary = "Echo back input text safely without touching external services"
+risk = "R0"
+handler = "ag.skills.builtin.echo:echo"
+pre_conditions = []
+post_conditions = []
+
+[tools.args.text]
+type = "string"
+description = "Text string to echo back"
+required = true

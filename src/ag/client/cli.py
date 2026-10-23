@@ -349,6 +349,68 @@ def get_app():
         )
         typer.echo(f"Total Tokens: Compact JSON = {total_compact} | TOON = {total_toon}\n")
 
+    skills_app = typer.Typer(name="skills", help="Manage and inspect agent skills")
+    app.add_typer(skills_app, name="skills")
+
+    @skills_app.command(name="list")
+    def skills_list() -> None:
+        """List all discovered skills and their risk levels."""
+        from ag.skills.registry import SkillRegistry
+
+        registry = SkillRegistry()
+        registry.discover()
+        skills = registry.list_skills()
+
+        typer.echo(f"\n{'NAME':<15} {'RISK':<6} {'TOOLS':<6} {'SUMMARY'}")
+        typer.echo("-" * 75)
+        for s in skills:
+            typer.echo(f"{s.name:<15} {s.risk:<6} {len(s.tools):<6} {s.summary}")
+
+        if registry.broken_manifests:
+            typer.secho("\nBroken Manifests Found:", fg=typer.colors.YELLOW, bold=True)
+            for bm in registry.broken_manifests:
+                typer.secho(f"  • File:  {bm['file']}", fg=typer.colors.RED)
+                typer.secho(f"    Field: {bm['field']}", fg=typer.colors.YELLOW)
+                typer.secho(f"    Error: {bm['error']}\n", fg=typer.colors.RED)
+        typer.echo()
+
+    @skills_app.command(name="show")
+    def skills_show(
+        name: Annotated[str, typer.Argument(help="Name of the skill to inspect")],
+    ) -> None:
+        """Show full details, tool signatures, and SKILL.md for a skill."""
+        from ag.skills.registry import SkillRegistry
+
+        registry = SkillRegistry()
+        registry.discover()
+        skill = registry.get_skill(name)
+
+        if not skill:
+            typer.secho(f"Error: Skill '{name}' not found.", fg=typer.colors.RED)
+            raise typer.Exit(code=1)
+
+        typer.echo(f"\n[Skill: {skill.name}] (Risk: {skill.risk})")
+        typer.echo("=" * 60)
+        typer.echo(f"Summary:  {skill.summary}")
+        if skill.manifest.triggers:
+            typer.echo(f"Triggers: {', '.join(skill.manifest.triggers)}")
+        if skill.manifest.examples:
+            typer.echo("Examples:")
+            for ex in skill.manifest.examples:
+                typer.echo(f"  - {ex}")
+
+        typer.echo("\nTools:")
+        for t in skill.tools:
+            typer.echo(f"  • {t.name} [{t.risk}]: {t.summary}")
+            if t.args:
+                for arg_name, arg_def in t.args.items():
+                    req = "(required)" if arg_def.required else f"(optional, default={arg_def.default})"
+                    typer.echo(f"      - {arg_name} ({arg_def.type}) {req}: {arg_def.description}")
+
+        typer.echo("\n--- SKILL.md Instructions ---")
+        typer.echo(skill.get_instructions())
+        typer.echo("=" * 60 + "\n")
+
     _app = app
     return _app
 
