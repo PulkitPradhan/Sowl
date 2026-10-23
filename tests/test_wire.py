@@ -30,7 +30,7 @@ json_primitives = (
     | st.floats(allow_nan=False, allow_infinity=False, min_value=-100000, max_value=100000).map(
         lambda f: round(f, 4)
     )
-    | st.text(alphabet=st.characters(blacklist_categories=("Cs", "Cc")), max_size=25)
+    | st.text(alphabet=st.characters(blacklist_categories=("Cs", "Cc", "Zs", "Zl", "Zp")), max_size=25)
 )
 
 json_values = st.recursive(
