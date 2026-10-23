@@ -264,6 +264,91 @@ def get_app():
                 typer.echo("\n  Benchmark skipped: No model server reachable or no models installed.")
         typer.echo("=" * 50 + "\n")
 
+    @app.command(name="wire")
+    def wire_cmd(
+        file: Annotated[
+            Path | None,
+            typer.Argument(help="JSON file to analyze (defaults to standard fixtures)"),
+        ] = None,
+        count: Annotated[
+            bool,
+            typer.Option("--count", "-c", help="Print token counts for JSON vs TOON"),
+        ] = False,
+    ) -> None:
+        """Analyze wire format (TOON vs JSON) token efficiency."""
+        from ag.wire.wire import count_tokens, to_llm
+
+        def _analyze_file(target: Path) -> dict[str, Any]:
+            raw_text = target.read_text(encoding="utf-8")
+            data = json.loads(raw_text)
+            indented = json.dumps(data, indent=2)
+            compact = json.dumps(data, separators=(",", ":"))
+            toon = to_llm(data, fmt="toon_both")
+
+            t_indented, label = count_tokens(indented)
+            t_compact, _ = count_tokens(compact)
+            t_toon, _ = count_tokens(toon)
+
+            saving_compact = ((t_compact - t_toon) / t_compact * 100) if t_compact > 0 else 0.0
+            saving_indented = ((t_indented - t_toon) / t_indented * 100) if t_indented > 0 else 0.0
+
+            return {
+                "name": target.name,
+                "t_indented": t_indented,
+                "t_compact": t_compact,
+                "t_toon": t_toon,
+                "saving_compact": saving_compact,
+                "saving_indented": saving_indented,
+                "label": label,
+            }
+
+        files_to_check: list[Path] = []
+        if file is not None:
+            if not file.is_file():
+                typer.secho(f"Error: File '{file}' not found.", fg=typer.colors.RED)
+                raise typer.Exit(code=1)
+            files_to_check.append(file)
+        else:
+            repo_root = Path(__file__).resolve().parent.parent.parent.parent
+            fixture_dir = repo_root / "tests" / "fixtures"
+            for name in ("tools.json", "snapshot.json", "plan.json"):
+                candidate = fixture_dir / name
+                if candidate.is_file():
+                    files_to_check.append(candidate)
+
+        if not files_to_check:
+            typer.secho("Error: No JSON file specified and fixtures not found.", fg=typer.colors.RED)
+            raise typer.Exit(code=1)
+
+        typer.echo("\n[ag wire] Token Efficiency Report (TOON vs JSON)")
+        typer.echo("=" * 70)
+        typer.echo(f"{'FIXTURE / FILE':<18} {'COMPACT JSON':<14} {'TOON':<10} {'SAVINGS vs COMPACT'}")
+        typer.echo("-" * 70)
+
+        total_compact = 0
+        total_toon = 0
+        last_label = ""
+
+        for f in files_to_check:
+            stats = _analyze_file(f)
+            total_compact += stats["t_compact"]
+            total_toon += stats["t_toon"]
+            last_label = stats["label"]
+            typer.echo(
+                f"{stats['name']:<18} {stats['t_compact']:<14} {stats['t_toon']:<10} {stats['saving_compact']:>6.1f}%"
+            )
+
+        typer.echo("=" * 70)
+        headline_saving = (
+            ((total_compact - total_toon) / total_compact * 100) if total_compact > 0 else 0.0
+        )
+        typer.secho(
+            f"Headline Savings vs Compact JSON: {headline_saving:.1f}% ({last_label})",
+            fg=typer.colors.GREEN,
+            bold=True,
+        )
+        typer.echo(f"Total Tokens: Compact JSON = {total_compact} | TOON = {total_toon}\n")
+
     _app = app
     return _app
 

@@ -8,7 +8,13 @@ dependencies = [
     "psutil>=7.2.2",  # Cross-platform RAM and system hardware detection for ag doctor
     "pydantic>=2.14.1",
     "pyyaml>=6.0.3",  # YAML configuration parser for profiles/*.yaml
+    "toon-format>=1.2.0",  # Official TOON specification 4.4 serializer for token reduction
     "typer>=0.27.3",
+]
+
+[project.optional-dependencies]
+tokens = [
+    "tiktoken>=0.9.0",  # Fast BPE token counter for ag wire --count
 ]
 
 [project.scripts]

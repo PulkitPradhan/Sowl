@@ -1,0 +1,48 @@
+{
+  "goal": "Build local-first personal AI agent ag",
+  "version": "0.1.0",
+  "active_step": 3,
+  "config": {
+    "tier": 2,
+    "wire_format": "toon_in",
+    "max_retries": 2,
+    "safe_mode": true
+  },
+  "steps": [
+    {
+      "id": 0,
+      "title": "uv skeleton & smoke tests",
+      "status": "completed",
+      "deliverables": ["pyproject.toml", "src/ag structure", "tests"]
+    },
+    {
+      "id": 1,
+      "title": "Daemon & JSON-RPC wire",
+      "status": "completed",
+      "deliverables": ["agentd", "ag CLI", "Unix socket server"]
+    },
+    {
+      "id": 2,
+      "title": "Model layer & Doctor",
+      "status": "completed",
+      "deliverables": ["OpenAIProvider", "profiles/*.yaml", "ag doctor"]
+    },
+    {
+      "id": 3,
+      "title": "Wire format TOON",
+      "status": "in_progress",
+      "deliverables": ["to_llm", "from_llm", "ag wire --count"]
+    },
+    {
+      "id": 4,
+      "title": "Skills registry",
+      "status": "pending",
+      "deliverables": ["manifest.toml", "skills/ loader"]
+    }
+  ],
+  "runtime_stats": {
+    "total_steps": 5,
+    "completed_steps": 3,
+    "percent_done": 60.0
+  }
+}
