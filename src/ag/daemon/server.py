@@ -29,6 +29,21 @@ Handler = Callable[[Any], Any] | Callable[[Any], Awaitable[Any]]
 __all__ = ["AgentDaemon", "get_default_socket_path", "register_default_handlers"]
 
 
+def is_loopback_endpoint(endpoint_url: str) -> bool:
+    """Check if an endpoint URL resolves to a local loopback address."""
+    try:
+        import ipaddress
+        from urllib.parse import urlparse
+        parsed = urlparse(endpoint_url)
+        host = parsed.hostname or ""
+        if host.lower() in ("localhost", "127.0.0.1", "::1"):
+            return True
+        ip = ipaddress.ip_address(host)
+        return ip.is_loopback
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def register_default_handlers(
     daemon: AgentDaemon,
     workspace_dir: Path | None = None,
@@ -178,17 +193,32 @@ def register_default_handlers(
         except FileNotFoundError:
             profile = ModelProfile(name="default", tier=1)
 
+        endpoint_override = None
+        allow_remote = False
+        if isinstance(params, dict):
+            endpoint_override = params.get("endpoint")
+            allow_remote = bool(params.get("allow_remote", False))
+
+        if endpoint_override:
+            if not allow_remote and not is_loopback_endpoint(endpoint_override):
+                raise JsonRpcError(
+                    code=-32602,
+                    message="Endpoint must be a loopback address unless allow_remote is True",
+                )
+            profile.endpoint = endpoint_override
+
         registry = SkillRegistry(workspace_dir=workspace_dir)
 
-        async def confirm_handler(confirm_event: dict[str, Any]) -> bool:
+        async def confirm_handler(confirm_event: dict[str, Any]) -> dict[str, Any]:
             step = confirm_event["step"]
             action_hash = confirm_event["action_hash"]
             fut = asyncio.get_running_loop().create_future()
             daemon.pending_confirms[(run_id, step)] = (writer, action_hash, fut)
             try:
-                return await asyncio.wait_for(fut, timeout=60.0)
+                approved = await asyncio.wait_for(fut, timeout=60.0)
+                return {"approved": approved, "source": "user"}
             except TimeoutError:
-                return False
+                return {"approved": False, "source": "timeout"}
             finally:
                 daemon.pending_confirms.pop((run_id, step), None)
 

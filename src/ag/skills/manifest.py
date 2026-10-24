@@ -35,6 +35,7 @@ class ToolManifest(BaseModel):
     risk: Literal["R0", "R1", "R2", "R3"] = Field(description="Tool risk tier (R0-R3)")
     handler: str | None = Field(default=None, description="Allowlisted handler function, e.g. ag.skills.builtin.files:read_file")
     args: dict[str, ArgField] = Field(default_factory=dict, description="Argument specifications")
+    examples: list[str] = Field(default_factory=list, description="Example prompt queries for this tool")
     pre_conditions: list[str] = Field(default_factory=list, description="Pre-conditions required for execution")
     post_conditions: list[str] = Field(default_factory=list, description="Post-conditions verified after execution")
 

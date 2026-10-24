@@ -70,35 +70,50 @@ def format_tool_table(tools: dict[str, ToolManifest]) -> str:
     return to_llm(rows, fmt="toon_in")
 
 
-def format_observation(result: dict[str, Any]) -> str:
-    """Format raw tool execution result for inclusion in history.
+def format_observation(
+    result: dict[str, Any],
+    wire_format: str = "toon_in",
+    context_window: int = 4096,
+) -> str:
+    """Format tool execution result via wire.to_llm with dynamic token budget truncation.
 
-    Compresses uniform flat dict lists into TOON tables, otherwise compact JSON.
-    Caps size at 20 KB and notes truncation.
+    Truncates DATA (rows or string length) before wire.to_llm and sets truncated: true
+    if size exceeds ~10-15% of context_window in tokens.
+    Observations always pass through wire.to_llm(result, fmt=wire_format).
     """
-    data = result.get("data")
-    if isinstance(data, list) and data and all(isinstance(x, dict) for x in data):
-        try:
-            formatted = to_llm(data, fmt="toon_in")
-        except Exception:  # noqa: BLE001
-            formatted = json.dumps(data, separators=(",", ":"), ensure_ascii=False)
-    elif data is not None:
-        if isinstance(data, (dict, list)):
-            formatted = json.dumps(data, separators=(",", ":"), ensure_ascii=False)
-        else:
-            formatted = str(data)
-    else:
-        formatted = json.dumps(result, separators=(",", ":"), ensure_ascii=False)
+    res = dict(result)
+    max_tokens = max(100, int(context_window * 0.12))  # ~12% of context window
 
-    max_bytes = 20_000
-    if len(formatted.encode("utf-8")) > max_bytes:
-        truncated_text = formatted[:max_bytes]
-        return f"{truncated_text}\n[Observation truncated: {len(formatted)} bytes capped to {max_bytes} bytes]"
+    data = res.get("data")
+    if data is not None:
+        if isinstance(data, (list, str)):
+            raw_str = to_llm(res, fmt=wire_format)
+            tok_count, _ = count_tokens(raw_str)
+            if tok_count > max_tokens:
+                low = 0
+                high = len(data)
+                best = 0
+                while low <= high:
+                    mid = (low + high) // 2
+                    test_res = dict(res)
+                    test_res["data"] = data[:mid]
+                    test_res["truncated"] = True
+                    t_count, _ = count_tokens(to_llm(test_res, fmt=wire_format))
+                    if t_count <= max_tokens:
+                        best = mid
+                        low = mid + 1
+                    else:
+                        high = mid - 1
+                res["data"] = data[:best]
+                res["truncated"] = True
+        elif isinstance(data, dict):
+            raw_str = to_llm(res, fmt=wire_format)
+            tok_count, _ = count_tokens(raw_str)
+            if tok_count > max_tokens:
+                res["data"] = str(data)[:max_tokens * 3]
+                res["truncated"] = True
 
-    if result.get("truncated"):
-        return f"{formatted}\n[Observation was truncated by tool]"
-
-    return formatted
+    return to_llm(res, fmt=wire_format)
 
 
 def wrap_observation(tool_name: str, raw_data: str, delimiter_token: str) -> str:
@@ -149,7 +164,18 @@ class Planner:
         # 1. Static prefix: system prompt + tool table (no run IDs or timestamps)
         sys_prompt = self._load_system_prompt()
         tool_table = format_tool_table(tools)
-        system_content = f"{sys_prompt}\n\nAvailable Tools:\n{tool_table}"
+        examples_block = ""
+        if getattr(self.profile, "examples", 0) == 1:
+            all_examples = []
+            for tool in tools.values():
+                for ex in getattr(tool, "examples", []):
+                    if ex not in all_examples:
+                        all_examples.append(ex)
+            if all_examples:
+                examples_lines = "\n".join(f"- {ex}" for ex in all_examples)
+                examples_block = f"\n\nExamples:\n{examples_lines}"
+
+        system_content = f"{sys_prompt}\n\nAvailable Tools:\n{tool_table}{examples_block}"
 
         # Prepare editable observation list for context budgeting
         observations = [obs for _, obs in history]

@@ -19,7 +19,8 @@ required = true
 [tools.args.subject]
 type = "string"
 description = "Email subject line"
-required = true
+required = false
+default = ""
 
 [tools.args.body]
 type = "string"

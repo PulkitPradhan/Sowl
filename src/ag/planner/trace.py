@@ -98,13 +98,64 @@ class TraceLogger:
         except OSError:
             pass
 
-    def log_init(self, run_id: str, task: str, profile_name: str) -> None:
+    def log_init(
+        self,
+        run_id: str,
+        task: str,
+        profile_name: str,
+        wire_format: str = "toon_in",
+        endpoint: str = "",
+    ) -> None:
         prune_old_traces(self.traces_dir, max_keep=199)
         record = {
             "type": "init",
             "run_id": run_id,
             "task": task,
             "profile": profile_name,
+            "wire_format": wire_format,
+            "endpoint": endpoint,
+            "timestamp": time.time(),
+        }
+        self._write_record(run_id, record)
+
+    def log_confirm_request(
+        self,
+        run_id: str,
+        step_idx: int,
+        tool: str,
+        args: dict[str, Any],
+        risk: str,
+        action_hash: str,
+    ) -> None:
+        record = {
+            "type": "confirm_request",
+            "run_id": run_id,
+            "step": step_idx,
+            "tool": tool,
+            "args": args,
+            "risk": risk,
+            "action_hash": action_hash,
+            "timestamp": time.time(),
+        }
+        self._write_record(run_id, record)
+
+    def log_confirm_decision(
+        self,
+        run_id: str,
+        step_idx: int,
+        tool: str,
+        action_hash: str,
+        approved: bool,
+        source: str = "user",
+    ) -> None:
+        record = {
+            "type": "confirm_decision",
+            "run_id": run_id,
+            "step": step_idx,
+            "tool": tool,
+            "action_hash": action_hash,
+            "approved": approved,
+            "source": source,
             "timestamp": time.time(),
         }
         self._write_record(run_id, record)

@@ -9,7 +9,7 @@ from typing import Any
 MAX_BODY_CHARS = 2000
 
 
-def compose_email(to: str, subject: str, body: str) -> dict[str, Any]:
+def compose_email(to: str, subject: str = "", body: str = "") -> dict[str, Any]:
     """Build prefilled Gmail compose URL with strict URL-encoding and open in browser."""
     to_str = str(to or "").strip()
     subject_str = str(subject or "").strip()
@@ -19,14 +19,16 @@ def compose_email(to: str, subject: str, body: str) -> dict[str, Any]:
     if truncated:
         body_str = body_str[:MAX_BODY_CHARS]
 
-    # Query params encoded properly with quote
+    # Query params encoded properly with quote. Omit 'su' if subject is empty.
     params = {
         "view": "cm",
         "fs": "1",
         "to": to_str,
-        "su": subject_str,
         "body": body_str,
     }
+    if subject_str:
+        params["su"] = subject_str
+
     query_str = urllib.parse.urlencode(params, quote_via=urllib.parse.quote)
     compose_url = f"https://mail.google.com/mail/?{query_str}"
 

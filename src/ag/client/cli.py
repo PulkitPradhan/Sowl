@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 from typing import Annotated, Any
 
+from ag.daemon.server import is_loopback_endpoint
 from ag.wire.rpc import get_default_socket_path
 
 _app = None
@@ -75,8 +76,17 @@ def get_app():
     @app.command()
     def run(
         text: Annotated[str, typer.Argument(help="Task or instruction to execute")],
+        endpoint: Annotated[str | None, typer.Option("--endpoint", help="Custom OpenAI endpoint override")] = None,
+        allow_remote: Annotated[bool, typer.Option("--allow-remote", help="Allow non-loopback endpoints")] = False,
     ) -> None:
         """Execute an autonomous agent task with streaming steps, confirmation, and trace logging."""
+        if endpoint and not allow_remote and not is_loopback_endpoint(endpoint):
+            typer.secho(
+                "Error: --endpoint must be a loopback address (e.g. 127.0.0.1, localhost) unless --allow-remote is set.",
+                fg=typer.colors.RED,
+            )
+            raise typer.Exit(code=1)
+
         import secrets
         import socket
 
@@ -97,7 +107,11 @@ def get_app():
                 raise typer.Exit(code=1)
 
             run_id = f"run_{secrets.token_hex(6)}"
-            req_bytes = format_request("run", {"task": current_task, "run_id": run_id}, msg_id=1)
+            run_payload = {"task": current_task, "run_id": run_id}
+            if endpoint:
+                run_payload["endpoint"] = endpoint
+                run_payload["allow_remote"] = allow_remote
+            req_bytes = format_request("run", run_payload, msg_id=1)
             sock.sendall(req_bytes)
 
             buffer = b""
@@ -567,6 +581,77 @@ def get_app():
                 typer.echo(f"Summary:     {r.get('summary')}")
                 typer.echo(f"Total Steps: {r.get('total_steps')} | Duration: {r.get('duration_s')}s")
         typer.echo("=" * 60 + "\n")
+
+    # -------------------------------------------------------------------------
+    # ag prompt
+    # -------------------------------------------------------------------------
+    prompt_app = typer.Typer(name="prompt", help="Inspect prompt assembly and token counts")
+    app.add_typer(prompt_app)
+
+    @prompt_app.command("show")
+    def prompt_show(
+        task: Annotated[str, typer.Argument(help="Task prompt to inspect")],
+        profile_name: Annotated[str | None, typer.Option("--profile", "-p", help="Model profile to load")] = None,
+        sample_observation: Annotated[bool, typer.Option("--sample-observation", help="Include sample files.list observation in history")] = False,
+    ) -> None:
+        """Display exact messages, active wire_format, and token counts without calling model."""
+        from ag.models.profile import get_active_profile, load_profile
+        from ag.planner.planner import Planner, format_observation
+        from ag.skills.registry import SkillRegistry
+        from ag.wire import count_tokens
+
+        active = profile_name or get_active_profile() or "tier1_cpu"
+        profile = load_profile(active)
+
+        registry = SkillRegistry()
+        registry.discover()
+        tools = registry.get_tools()
+
+        planner = Planner(profile=profile)
+        history: list[tuple[Any, str]] = []
+
+        if sample_observation:
+            fake_files = {
+                "ok": True,
+                "data": [
+                    {"name": "file_1.txt", "size": 1024, "type": "file"},
+                    {"name": "file_2.py", "size": 2048, "type": "file"},
+                    {"name": "notes.md", "size": 512, "type": "file"},
+                    {"name": "data.csv", "size": 4096, "type": "file"},
+                    {"name": "readme.rst", "size": 256, "type": "file"},
+                ],
+                "error": None,
+            }
+            obs_formatted = format_observation(
+                fake_files,
+                wire_format=profile.wire_format,
+                context_window=profile.context_window,
+            )
+            history.append(
+                (
+                    {"kind": "tool", "tool": "files.list", "args": {"path": "."}},
+                    obs_formatted,
+                )
+            )
+
+        messages = planner.build_messages(
+            task=task,
+            tools=tools,
+            history=history,
+            run_delimiter="sample_run_delimiter",
+        )
+
+        all_text = " ".join(m["content"] for m in messages)
+        approx_tokens, label = count_tokens(all_text)
+
+        typer.secho(f"\n[Prompt Inspection: {profile.name}]", fg=typer.colors.CYAN, bold=True)
+        typer.echo(f"Wire format: {profile.wire_format}")
+        typer.echo(f"Approximate tokens: {approx_tokens} ({label})\n")
+
+        for idx, msg in enumerate(messages, 1):
+            role = msg["role"]
+            typer.secho(f"--- Message {idx} [Role: {role}] ---", fg=typer.colors.YELLOW)
+            typer.echo(msg["content"] + "\n")
 
     _app = app
     return _app

@@ -141,20 +141,69 @@ class Executor:
 
         await self._emit_event("confirm", run_id, confirm_data)
 
+        self.trace_logger.log_confirm_request(
+            run_id=run_id,
+            step_idx=step_idx,
+            tool=tool.name,
+            args=clean_args,
+            risk=tool.risk,
+            action_hash=action_hash,
+        )
+
         if self.confirm_handler is None:
             # Default policy: without a handler, non-R0 is denied
+            self.trace_logger.log_confirm_decision(
+                run_id=run_id,
+                step_idx=step_idx,
+                tool=tool.name,
+                action_hash=action_hash,
+                approved=False,
+                source="policy",
+            )
             return False
 
         try:
             res = self.confirm_handler(confirm_data)
             if asyncio.iscoroutine(res):
-                approval = await asyncio.wait_for(res, timeout=self.confirm_timeout)
+                res_val = await asyncio.wait_for(res, timeout=self.confirm_timeout)
             else:
-                approval = bool(res)
-            return bool(approval)
+                res_val = res
+
+            if isinstance(res_val, dict):
+                approval = bool(res_val.get("approved", False))
+                source = str(res_val.get("source", "user"))
+            else:
+                approval = bool(res_val)
+                source = "user"
+
+            self.trace_logger.log_confirm_decision(
+                run_id=run_id,
+                step_idx=step_idx,
+                tool=tool.name,
+                action_hash=action_hash,
+                approved=approval,
+                source=source,
+            )
+            return approval
         except TimeoutError:
+            self.trace_logger.log_confirm_decision(
+                run_id=run_id,
+                step_idx=step_idx,
+                tool=tool.name,
+                action_hash=action_hash,
+                approved=False,
+                source="timeout",
+            )
             return False
         except Exception:  # noqa: BLE001
+            self.trace_logger.log_confirm_decision(
+                run_id=run_id,
+                step_idx=step_idx,
+                tool=tool.name,
+                action_hash=action_hash,
+                approved=False,
+                source="policy",
+            )
             return False
 
     async def run(self, task: str, run_id: str | None = None) -> ExecutorResult:
@@ -164,7 +213,13 @@ class Executor:
         self.registry.discover()
         tools = self.registry.get_tools()
 
-        self.trace_logger.log_init(rid, task, self.profile.name)
+        self.trace_logger.log_init(
+            rid,
+            task,
+            self.profile.name,
+            wire_format=self.profile.wire_format,
+            endpoint=self.profile.endpoint,
+        )
         await self._emit_event("init", rid, {"task": task, "profile": self.profile.name})
 
         # Tier 0 check
@@ -359,7 +414,11 @@ class Executor:
 
                     # Execute tool via registry
                     exec_result = await self.registry.execute_tool(tool_act.tool, tool_act.args)
-                    formatted_obs = format_observation(exec_result)
+                    formatted_obs = format_observation(
+                        exec_result,
+                        wire_format=self.profile.wire_format,
+                        context_window=self.profile.context_window,
+                    )
 
                     await self._emit_event(
                         "observation", rid,
