@@ -1,0 +1,17 @@
+id: norm_02
+category: normal
+split: dev
+prompt: Read notes.txt and summarize it in one line.
+setup:
+  notes.txt: Project meeting scheduled for Monday at 10am.
+expected:
+  first_tool: files.read
+  first_args:
+    path: notes.txt
+  stop_reason: done
+success_check:
+  stop_reason: done
+  tool_called: files.read
+  summary_contains:
+  - meeting
+  - monday

@@ -13,5 +13,6 @@ post_conditions = ["url_opened"]
 
 [tools.args.url]
 type = "string"
+kind = "identifier"
 description = "HTTP or HTTPS URL to open"
 required = true

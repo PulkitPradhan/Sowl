@@ -1,0 +1,14 @@
+id: norm_07
+category: normal
+split: dev
+prompt: List files in src directory
+setup:
+  src/app.py: print("hello")
+expected:
+  first_tool: files.list
+  first_args:
+    path: src
+  stop_reason: done
+success_check:
+  stop_reason: done
+  tool_called: files.list

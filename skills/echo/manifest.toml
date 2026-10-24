@@ -13,5 +13,6 @@ post_conditions = []
 
 [tools.args.text]
 type = "string"
+kind = "text"
 description = "Text string to echo back"
 required = true

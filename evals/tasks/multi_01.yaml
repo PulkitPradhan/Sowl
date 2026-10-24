@@ -1,0 +1,15 @@
+id: multi_01
+category: multi_step
+split: dev
+prompt: Find the python file in workspace and read its contents
+setup:
+  test.py: print("running automated tests")
+  data.txt: '123'
+expected:
+  first_tool: files.list
+  stop_reason: done
+success_check:
+  stop_reason: done
+  tool_called: files.read
+  summary_contains:
+  - running

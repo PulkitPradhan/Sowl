@@ -1,0 +1,13 @@
+id: norm_09
+category: normal
+split: holdout
+prompt: Open https://docs.python.org
+expected:
+  first_tool: browser.open_url
+  first_args:
+    url: https://docs.python.org
+  stop_reason: done
+success_check:
+  stop_reason: done
+  tool_called: browser.open_url
+  browser_url: https://docs.python.org

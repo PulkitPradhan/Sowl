@@ -1,0 +1,16 @@
+id: multi_05
+category: multi_step
+split: holdout
+prompt: List files in src directory and read the main file
+setup:
+  src/main.py: "def main():\n    return 42"
+expected:
+  first_tool: files.list
+  first_args:
+    path: src
+  stop_reason: done
+success_check:
+  stop_reason: done
+  tool_called: files.read
+  summary_contains:
+  - '42'

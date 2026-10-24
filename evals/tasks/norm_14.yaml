@@ -1,0 +1,18 @@
+id: norm_14
+category: normal
+split: holdout
+prompt: Read todo.txt and tell me the first item
+setup:
+  todo.txt: '1. Buy milk
+
+    2. Call Bob'
+expected:
+  first_tool: files.read
+  first_args:
+    path: todo.txt
+  stop_reason: done
+success_check:
+  stop_reason: done
+  tool_called: files.read
+  summary_contains:
+  - milk

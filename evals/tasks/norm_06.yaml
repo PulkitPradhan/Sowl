@@ -1,0 +1,16 @@
+id: norm_06
+category: normal
+split: dev
+prompt: Read config.json and tell me the port
+setup:
+  config.json: '{"port": 8080}'
+expected:
+  first_tool: files.read
+  first_args:
+    path: config.json
+  stop_reason: done
+success_check:
+  stop_reason: done
+  tool_called: files.read
+  summary_contains:
+  - '8080'

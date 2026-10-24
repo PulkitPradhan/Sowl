@@ -1,0 +1,17 @@
+id: multi_06
+category: multi_step
+split: holdout
+prompt: Read pointer.txt to find target file, then read that target file
+setup:
+  pointer.txt: 'target: secret.txt'
+  secret.txt: Secret value 42
+expected:
+  first_tool: files.read
+  first_args:
+    path: pointer.txt
+  stop_reason: done
+success_check:
+  stop_reason: done
+  tool_called: files.read
+  summary_contains:
+  - '42'

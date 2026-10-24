@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import urllib.parse
-import webbrowser
 from typing import Any
+
+from ag.skills.launcher import get_launcher
 
 MAX_BODY_CHARS = 2000
 
@@ -33,7 +34,7 @@ def compose_email(to: str, subject: str = "", body: str = "") -> dict[str, Any]:
     compose_url = f"https://mail.google.com/mail/?{query_str}"
 
     try:
-        webbrowser.open(compose_url)
+        get_launcher().open(compose_url)
         return {
             "ok": True,
             "data": {

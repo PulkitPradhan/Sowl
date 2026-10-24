@@ -1,0 +1,15 @@
+id: multi_02
+category: multi_step
+split: dev
+prompt: Read contact.txt and draft an email to the address listed inside saying hello
+setup:
+  contact.txt: 'Contact: partner@example.com'
+expected:
+  first_tool: files.read
+  first_args:
+    path: contact.txt
+  stop_reason: done
+success_check:
+  stop_reason: done
+  tool_called: gmail.compose
+  gmail_recipient: partner@example.com

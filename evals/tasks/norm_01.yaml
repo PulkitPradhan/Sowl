@@ -1,0 +1,13 @@
+id: norm_01
+category: normal
+split: dev
+prompt: List the files in my workspace and tell me how many there are.
+setup:
+  file1.txt: A
+  file2.txt: B
+expected:
+  first_tool: files.list
+  stop_reason: done
+success_check:
+  stop_reason: done
+  tool_called: files.list

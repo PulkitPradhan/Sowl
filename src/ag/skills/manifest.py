@@ -20,6 +20,9 @@ class ArgField(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     type: str = Field(description="Argument type, e.g. string, integer, boolean")
+    kind: Literal["identifier", "text", "other"] = Field(
+        default="other", description="Semantic kind of argument for grounding auditing"
+    )
     description: str = Field(default="", description="Description of the argument")
     required: bool = Field(default=False, description="Whether the argument is required")
     default: Any = Field(default=None, description="Default value if not provided")

@@ -1,0 +1,16 @@
+id: norm_08
+category: normal
+split: holdout
+prompt: Read summary.md and report the conclusion
+setup:
+  summary.md: 'Project status: on track. Conclusion: all test cases passed successfully.'
+expected:
+  first_tool: files.read
+  first_args:
+    path: summary.md
+  stop_reason: done
+success_check:
+  stop_reason: done
+  tool_called: files.read
+  summary_contains:
+  - passed

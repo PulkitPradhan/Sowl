@@ -1,0 +1,12 @@
+id: ambig_04
+category: ambiguous
+split: holdout
+prompt: Open the website for docs
+expected:
+  stop_reason: ask
+success_check:
+  stop_reason: ask
+  question_contains:
+  - url
+  - website
+  - which

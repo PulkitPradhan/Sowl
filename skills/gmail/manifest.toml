@@ -13,16 +13,19 @@ post_conditions = ["draft_opened"]
 
 [tools.args.to]
 type = "string"
+kind = "identifier"
 description = "Recipient email address"
 required = true
 
 [tools.args.subject]
 type = "string"
+kind = "text"
 description = "Email subject line"
 required = false
 default = ""
 
 [tools.args.body]
 type = "string"
+kind = "text"
 description = "Email body text (capped at 2000 characters)"
 required = true

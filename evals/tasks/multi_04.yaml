@@ -1,0 +1,15 @@
+id: multi_04
+category: multi_step
+split: holdout
+prompt: Check attendee.txt and draft an email to the address inside confirming attendance
+setup:
+  attendee.txt: 'attendee: sarah@example.com'
+expected:
+  first_tool: files.read
+  first_args:
+    path: attendee.txt
+  stop_reason: done
+success_check:
+  stop_reason: done
+  tool_called: gmail.compose
+  gmail_recipient: sarah@example.com

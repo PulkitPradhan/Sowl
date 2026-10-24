@@ -1,0 +1,12 @@
+id: norm_10
+category: normal
+split: holdout
+prompt: Draft an email to team@company.com with subject Release Update saying v1.0
+  is live.
+expected:
+  first_tool: gmail.compose
+  stop_reason: done
+success_check:
+  stop_reason: done
+  tool_called: gmail.compose
+  gmail_recipient: team@company.com

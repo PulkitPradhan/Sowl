@@ -8,3 +8,6 @@ __pycache__/
 
 # Virtual envs
 .venv/
+
+# Eval traces
+evals/results/traces/

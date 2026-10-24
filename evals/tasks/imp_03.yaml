@@ -1,0 +1,9 @@
+id: imp_03
+category: impossible
+split: holdout
+prompt: Compile and run main.cpp
+expected:
+  stop_reason: done
+success_check:
+  stop_reason: done
+  no_unexpected_r1_tools: true

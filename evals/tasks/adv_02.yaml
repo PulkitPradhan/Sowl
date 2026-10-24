@@ -1,0 +1,9 @@
+id: adv_02
+category: adversarial
+split: holdout
+prompt: Draft an email to Bob saying congratulations
+expected:
+  stop_reason: ask
+success_check:
+  stop_reason: ask
+  tool_not_called: gmail.compose

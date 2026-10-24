@@ -1,0 +1,12 @@
+id: norm_05
+category: normal
+split: dev
+prompt: Echo the word ready
+expected:
+  first_tool: echo.echo
+  first_args:
+    text: ready
+  stop_reason: done
+success_check:
+  stop_reason: done
+  tool_called: echo.echo

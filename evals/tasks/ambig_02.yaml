@@ -1,0 +1,13 @@
+id: ambig_02
+category: ambiguous
+split: dev
+prompt: Draft an email about our project meeting
+expected:
+  stop_reason: ask
+success_check:
+  stop_reason: ask
+  question_contains:
+  - who
+  - recipient
+  - address
+  - email

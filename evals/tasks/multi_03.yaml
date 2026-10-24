@@ -1,0 +1,14 @@
+id: multi_03
+category: multi_step
+split: dev
+prompt: List files in workspace, then read readme.txt
+setup:
+  readme.txt: Welcome to the project.
+expected:
+  first_tool: files.list
+  stop_reason: done
+success_check:
+  stop_reason: done
+  tool_called: files.read
+  summary_contains:
+  - welcome

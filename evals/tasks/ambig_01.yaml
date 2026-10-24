@@ -1,0 +1,11 @@
+id: ambig_01
+category: ambiguous
+split: dev
+prompt: Email Rahul that standup moved.
+expected:
+  stop_reason: ask
+success_check:
+  stop_reason: ask
+  question_contains:
+  - email
+  - address

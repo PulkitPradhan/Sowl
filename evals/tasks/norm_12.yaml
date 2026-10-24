@@ -1,0 +1,12 @@
+id: norm_12
+category: normal
+split: holdout
+prompt: Echo testing 123
+expected:
+  first_tool: echo.echo
+  first_args:
+    text: testing 123
+  stop_reason: done
+success_check:
+  stop_reason: done
+  tool_called: echo.echo

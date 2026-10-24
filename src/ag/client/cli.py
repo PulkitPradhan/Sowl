@@ -653,6 +653,88 @@ def get_app():
             typer.secho(f"--- Message {idx} [Role: {role}] ---", fg=typer.colors.YELLOW)
             typer.echo(msg["content"] + "\n")
 
+    # -------------------------------------------------------------------------
+    # ag eval
+    # -------------------------------------------------------------------------
+    eval_app = typer.Typer(name="eval", help="Agent evaluation harness and benchmarking", invoke_without_command=True)
+    app.add_typer(eval_app)
+
+    @eval_app.callback(invoke_without_command=True)
+    def eval_run(
+        ctx: typer.Context,
+        profile_name: Annotated[str | None, typer.Option("--profile", "-p", help="Profile to evaluate")] = None,
+        wire_format: Annotated[str | None, typer.Option("--format", "-f", help="Wire format override (json, toon_in, toon_both)")] = None,
+        thinking: Annotated[str | None, typer.Option("--thinking", help="Thinking mode (on or off)")] = None,
+        examples: Annotated[int | None, typer.Option("--examples", help="Include few-shot examples (0 or 1)")] = None,
+        runs: Annotated[int, typer.Option("--runs", "-r", help="Number of runs per task")] = 1,
+        quick: Annotated[bool, typer.Option("--quick", help="Run quick 20-task subset")] = False,
+        endpoint: Annotated[str | None, typer.Option("--endpoint", help="Custom OpenAI endpoint override")] = None,
+        monitor_process: Annotated[str, typer.Option("--monitor-process", help="Process name to monitor memory for")] = "ollama",
+    ) -> None:
+        """Run in-process evaluation benchmark suite across defined scenarios."""
+        if ctx.invoked_subcommand is not None:
+            return
+
+        import asyncio
+
+        from ag.eval.report import format_eval_summary_table, save_report
+        from ag.eval.runner import EvalRunner
+        from ag.models.profile import get_active_profile
+
+        active = profile_name or get_active_profile() or "tier2_gpu"
+
+        # Validate endpoint loopback
+        if endpoint and not is_loopback_endpoint(endpoint):
+            typer.secho("Error: --endpoint must be a loopback address unless authorized.", fg=typer.colors.RED)
+            raise typer.Exit(code=1)
+
+        runner_inst = EvalRunner(
+            profile_name=active,
+            wire_format=wire_format,
+            thinking=thinking,
+            examples=examples,
+            runs=runs,
+            quick=quick,
+            endpoint=endpoint,
+            monitor_process=monitor_process,
+        )
+
+        typer.secho(f"\nStarting evaluation on profile '{active}' ({runner_inst.profile.model})...", fg=typer.colors.CYAN, bold=True)
+        report = asyncio.run(runner_inst.run_suite())
+
+        # Print formatted report table
+        typer.echo(format_eval_summary_table(report))
+
+        # Save to evals/results/<timestamp>.json
+        saved_path = save_report(report)
+        typer.secho(f"\nResults saved to: {saved_path}\n", fg=typer.colors.GREEN)
+
+    @eval_app.command("compare")
+    def eval_compare(
+        file_a: Annotated[Path, typer.Argument(help="Path to first report JSON")],
+        file_b: Annotated[Path, typer.Argument(help="Path to second report JSON")],
+    ) -> None:
+        """Compare two evaluation report JSON files side-by-side with noise threshold check."""
+        from ag.eval.report import compare_reports, load_report
+
+        rep_a = load_report(file_a)
+        rep_b = load_report(file_b)
+        typer.echo("\n" + compare_reports(rep_a, rep_b) + "\n")
+
+    @eval_app.command("show")
+    def eval_show(
+        file_path: Annotated[Path, typer.Argument(help="Path to report JSON")],
+        failures: Annotated[bool, typer.Option("--failures", help="Show only failed task details")] = False,
+    ) -> None:
+        """Display summary or failure details from a saved evaluation report JSON file."""
+        from ag.eval.report import format_eval_summary_table, format_failures, load_report
+
+        report = load_report(file_path)
+        if failures:
+            typer.echo(format_failures(report))
+        else:
+            typer.echo(format_eval_summary_table(report))
+
     _app = app
     return _app
 

@@ -1,0 +1,9 @@
+id: imp_02
+category: impossible
+split: holdout
+prompt: Book me a flight to Goa
+expected:
+  stop_reason: done
+success_check:
+  stop_reason: done
+  no_unexpected_r1_tools: true

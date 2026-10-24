@@ -1,0 +1,20 @@
+id: norm_11
+category: normal
+split: holdout
+prompt: Read data.csv and report what headers exist
+setup:
+  data.csv: 'id,name,role
+
+    1,Alice,Dev
+
+    2,Bob,QA'
+expected:
+  first_tool: files.read
+  first_args:
+    path: data.csv
+  stop_reason: done
+success_check:
+  stop_reason: done
+  tool_called: files.read
+  summary_contains:
+  - role

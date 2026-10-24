@@ -1,0 +1,14 @@
+id: norm_13
+category: normal
+split: holdout
+prompt: List files in docs folder
+setup:
+  docs/index.md: '# Documentation'
+expected:
+  first_tool: files.list
+  first_args:
+    path: docs
+  stop_reason: done
+success_check:
+  stop_reason: done
+  tool_called: files.list

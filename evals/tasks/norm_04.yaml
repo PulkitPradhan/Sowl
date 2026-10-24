@@ -1,0 +1,11 @@
+id: norm_04
+category: normal
+split: dev
+prompt: Draft an email to alice@example.com saying the meeting moved to 5pm.
+expected:
+  first_tool: gmail.compose
+  stop_reason: done
+success_check:
+  stop_reason: done
+  tool_called: gmail.compose
+  gmail_recipient: alice@example.com

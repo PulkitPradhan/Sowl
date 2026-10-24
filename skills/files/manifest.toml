@@ -13,6 +13,7 @@ post_conditions = ["content_returned"]
 
 [tools.args.path]
 type = "string"
+kind = "identifier"
 description = "Relative path of file to read"
 required = true
 
@@ -26,6 +27,7 @@ post_conditions = ["entries_returned"]
 
 [tools.args.path]
 type = "string"
+kind = "identifier"
 description = "Directory path to list"
 required = false
 default = "."

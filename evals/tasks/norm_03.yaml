@@ -1,0 +1,13 @@
+id: norm_03
+category: normal
+split: dev
+prompt: Open https://example.com
+expected:
+  first_tool: browser.open_url
+  first_args:
+    url: https://example.com
+  stop_reason: done
+success_check:
+  stop_reason: done
+  tool_called: browser.open_url
+  browser_url: https://example.com

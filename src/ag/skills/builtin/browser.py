@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import urllib.parse
-import webbrowser
 from typing import Any
+
+from ag.skills.launcher import get_launcher
 
 ALLOWED_SCHEMES = {"http", "https"}
 
@@ -28,7 +29,7 @@ def open_url(url: str) -> dict[str, Any]:
         }
 
     try:
-        webbrowser.open(url.strip())
+        get_launcher().open(url.strip())
         return {
             "ok": True,
             "data": {

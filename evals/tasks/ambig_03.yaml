@@ -1,0 +1,11 @@
+id: ambig_03
+category: ambiguous
+split: holdout
+prompt: Send an email to Priya confirming the code review
+expected:
+  stop_reason: ask
+success_check:
+  stop_reason: ask
+  question_contains:
+  - email
+  - address
