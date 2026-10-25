@@ -235,6 +235,116 @@ def get_app():
             typer.secho(f"RPC Error: {err}", fg=typer.colors.RED)
             raise typer.Exit(code=1)
 
+    @app.command()
+    def web(
+        port: Annotated[int, typer.Option("--port", "-p", help="Port to listen on")] = 3180,
+        no_open: Annotated[bool, typer.Option("--no-open", help="Do not automatically open the browser")] = False,
+    ) -> None:
+        """Start the local web harness interface."""
+        from ag.web.server import run_web_server
+
+        run_web_server(
+            port=port,
+            no_open=no_open,
+            daemon_socket_path=state["socket_path"],
+        )
+
+    daemon_app = typer.Typer(name="daemon", help="Manage background agentd daemon")
+    app.add_typer(daemon_app, name="daemon")
+
+    @daemon_app.command(name="status")
+    def daemon_status() -> None:
+        """Check status of agentd daemon."""
+        status()
+
+    @daemon_app.command(name="stop")
+    def daemon_stop() -> None:
+        """Stop running agentd daemon."""
+        import signal
+
+        from ag.daemon.server import get_log_dir
+
+        pid_file = get_log_dir() / "agentd.pid"
+        if not pid_file.is_file():
+            typer.secho("agentd: stopped (no pidfile found)", fg=typer.colors.YELLOW)
+            return
+
+        try:
+            pid = int(pid_file.read_text(encoding="utf-8").strip())
+            os.kill(pid, signal.SIGTERM)
+            typer.secho(f"Sent SIGTERM to agentd (PID {pid}).", fg=typer.colors.GREEN)
+        except ProcessLookupError:
+            typer.secho("agentd process was not running (stale pidfile cleaned).", fg=typer.colors.YELLOW)
+            pid_file.unlink(missing_ok=True)
+        except Exception as err:  # noqa: BLE001
+            typer.secho(f"Failed to stop agentd: {err}", fg=typer.colors.RED)
+            raise typer.Exit(code=1)
+
+    session_app = typer.Typer(name="session", help="Manage persistent sessions")
+    app.add_typer(session_app, name="session")
+
+    @session_app.command(name="list")
+    def session_list() -> None:
+        """List active sessions."""
+        async def _list():
+            async with RpcClient(state["socket_path"]) as client:
+                return await client.call("session.list")
+
+        try:
+            sessions = asyncio.run(_list())
+            if not sessions:
+                typer.echo("No active sessions.")
+                return
+            for s in sessions:
+                typer.echo(f"ID: {s.get('session_id')} | Title: {s.get('title')} | Updated: {s.get('updated_at')}")
+        except Exception as err:  # noqa: BLE001
+            typer.secho(f"Error: {err}", fg=typer.colors.RED)
+            raise typer.Exit(code=1)
+
+    @session_app.command(name="new")
+    def session_new(
+        title: Annotated[str | None, typer.Option("--title", "-t", help="Session title")] = None,
+    ) -> None:
+        """Create a new session."""
+        async def _new():
+            async with RpcClient(state["socket_path"]) as client:
+                return await client.call("session.new", {"title": title})
+
+        try:
+            res = asyncio.run(_new())
+            typer.echo(f"Created session: {res.get('session_id')}")
+        except Exception as err:  # noqa: BLE001
+            typer.secho(f"Error: {err}", fg=typer.colors.RED)
+            raise typer.Exit(code=1)
+
+    @session_app.command(name="show")
+    def session_show(session_id: str) -> None:
+        """Show session history."""
+        async def _show():
+            async with RpcClient(state["socket_path"]) as client:
+                return await client.call("session.load", {"session_id": session_id})
+
+        try:
+            res = asyncio.run(_show())
+            typer.echo(json.dumps(res, indent=2))
+        except Exception as err:  # noqa: BLE001
+            typer.secho(f"Error: {err}", fg=typer.colors.RED)
+            raise typer.Exit(code=1)
+
+    @session_app.command(name="delete")
+    def session_delete(session_id: str) -> None:
+        """Delete a session."""
+        async def _delete():
+            async with RpcClient(state["socket_path"]) as client:
+                return await client.call("session.delete", {"session_id": session_id})
+
+        try:
+            asyncio.run(_delete())
+            typer.echo(f"Deleted session: {session_id}")
+        except Exception as err:  # noqa: BLE001
+            typer.secho(f"Error: {err}", fg=typer.colors.RED)
+            raise typer.Exit(code=1)
+
     model_app = typer.Typer(name="model", help="Manage model profiles")
     app.add_typer(model_app, name="model")
 

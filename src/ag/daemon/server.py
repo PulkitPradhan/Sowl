@@ -49,6 +49,7 @@ def register_default_handlers(
     workspace_dir: Path | None = None,
     profiles_dir: Path | None = None,
     fake_provider: Any | None = None,
+    sessions_dir: Path | None = None,
 ) -> None:
     """Register built-in RPC method handlers for agentd."""
     from ag.models.doctor import get_system_specs, list_server_models, recommend_tier
@@ -59,8 +60,10 @@ def register_default_handlers(
         load_profile,
         set_active_profile,
     )
+    from ag.web.sessions import SessionManager, build_continuation_prompt
 
     start_time = time.time()
+    session_mgr = SessionManager(sessions_dir=sessions_dir)
 
     daemon.register("ping", lambda params: "pong")
 
@@ -93,6 +96,11 @@ def register_default_handlers(
     daemon.register("model.list", _model_list_handler)
 
     def _model_use_handler(params: Any) -> dict[str, Any]:
+        if daemon.active_runs or daemon.model_lock.locked():
+            raise JsonRpcError(
+                code=-32004,
+                message="Cannot switch model profile while a run is active",
+            )
         name = params.get("name") if isinstance(params, dict) else str(params)
         profile = load_profile(name, profiles_dir=profiles_dir)
         set_active_profile(profile.name, workspace_dir=workspace_dir)
@@ -123,6 +131,38 @@ def register_default_handlers(
         }
 
     daemon.register("doctor", _doctor_handler)
+
+    def _session_list_handler(params: Any) -> list[dict[str, Any]]:
+        return session_mgr.list_sessions()
+
+    daemon.register("session.list", _session_list_handler)
+
+    def _session_new_handler(params: Any) -> dict[str, Any]:
+        title = params.get("title") if isinstance(params, dict) else None
+        session_id = session_mgr.create_session(title=title)
+        return {"session_id": session_id}
+
+    daemon.register("session.new", _session_new_handler)
+
+    def _session_load_handler(params: Any) -> dict[str, Any]:
+        session_id = params.get("session_id") if isinstance(params, dict) else str(params)
+        try:
+            turns = session_mgr.load_session(session_id)
+            return {"session_id": session_id, "messages": turns}
+        except Exception as err:
+            raise JsonRpcError(code=-32602, message=str(err)) from err
+
+    daemon.register("session.load", _session_load_handler)
+
+    def _session_delete_handler(params: Any) -> dict[str, Any]:
+        session_id = params.get("session_id") if isinstance(params, dict) else str(params)
+        try:
+            deleted = session_mgr.delete_session(session_id)
+            return {"deleted": deleted}
+        except Exception as err:
+            raise JsonRpcError(code=-32602, message=str(err)) from err
+
+    daemon.register("session.delete", _session_delete_handler)
 
     async def _run_confirm_handler(params: Any, writer: asyncio.StreamWriter | None = None) -> dict[str, Any]:
         if not isinstance(params, dict):
@@ -167,13 +207,24 @@ def register_default_handlers(
 
         task_text = ""
         run_id = None
+        session_id = None
         if isinstance(params, dict):
             task_text = params.get("task") or params.get("text") or params.get("message") or ""
             run_id = params.get("run_id")
+            session_id = params.get("session_id")
         elif isinstance(params, str):
             task_text = params
 
         run_id = run_id or f"run_{secrets.token_hex(6)}"
+
+        if session_id:
+            try:
+                history = session_mgr.load_session(session_id)
+                session_mgr.append_turn(session_id, {"type": "user", "text": task_text})
+                if history:
+                    task_text = build_continuation_prompt(history, task_text)
+            except Exception as err:
+                raise JsonRpcError(code=-32602, message=f"Session error: {err}") from err
 
         if daemon.model_lock.locked() and writer is not None:
             queued_line = json.dumps({
@@ -247,11 +298,56 @@ def register_default_handlers(
         async with daemon.model_lock:
             try:
                 res = await executor.run(task_text, run_id=run_id)
-                return res.model_dump()
+                res_dict = res.model_dump()
+                if session_id:
+                    session_mgr.append_turn(session_id, {
+                        "type": "agent",
+                        "run_id": run_id,
+                        "stop_reason": res.stop_reason,
+                        "summary": res.summary,
+                        "question": res.question,
+                        "total_steps": res.total_steps,
+                        "duration_s": res.duration_s,
+                    })
+                return res_dict
             finally:
                 daemon.active_runs.pop(run_id, None)
 
     daemon.register("run", _run_handler)
+
+
+def get_log_dir() -> Path:
+    """Return the directory for daemon logs and pidfile (mode 0700)."""
+    return Path(os.environ.get("AG_LOGS_DIR", "~/.ag/logs")).expanduser()
+
+
+def write_pidfile(log_dir: Path | None = None) -> Path:
+    """Write current process PID to agentd.pid with 0600 mode."""
+    target_dir = log_dir or get_log_dir()
+    try:
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target_dir.chmod(0o700)
+    except OSError:
+        pass
+    pid_file = target_dir / "agentd.pid"
+    try:
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+        fd = os.open(pid_file, flags, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(f"{os.getpid()}\n")
+    except OSError:
+        pass
+    return pid_file
+
+
+def remove_pidfile(log_dir: Path | None = None) -> None:
+    """Remove agentd.pid file upon shutdown."""
+    target_dir = log_dir or get_log_dir()
+    pid_file = target_dir / "agentd.pid"
+    try:
+        pid_file.unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 class AgentDaemon:
@@ -312,11 +408,14 @@ class AgentDaemon:
         except OSError:
             pass
 
+        write_pidfile()
+
         return self.server
 
     async def stop(self) -> None:
         """Stop the server, terminate client connections, and remove socket file."""
         self._stop_event.set()
+        remove_pidfile()
 
         if self.server is not None:
             self.server.close()

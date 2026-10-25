@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sowl Agent Harness</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <!-- Top Bar -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <span class="logo">🦉 Sowl</span>
+      <span id="connection-status" class="status-pill status-disconnected">Disconnected</span>
+      <span id="model-indicator" class="status-pill status-info">Model: ...</span>
+      <span id="hardware-hint" class="status-pill status-hint">HW: ...</span>
+    </div>
+    <div class="topbar-center">
+      <label for="profile-select" class="control-label">Profile:</label>
+      <select id="profile-select" class="select-input"></select>
+      <label for="thinking-select" class="control-label">Thinking:</label>
+      <select id="thinking-select" class="select-input">
+        <option value="off">off</option>
+        <option value="on">on</option>
+        <option value="auto">auto</option>
+      </select>
+    </div>
+    <div class="topbar-right">
+      <button id="btn-toggle-panel" class="btn btn-secondary" title="Toggle Side Panel">Panel</button>
+      <button id="btn-settings" class="btn btn-secondary" title="Settings">Settings</button>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <div class="main-layout">
+    <!-- Left Sidebar: Sessions -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <span class="sidebar-title">Sessions</span>
+        <button id="btn-new-session" class="btn btn-primary btn-sm">+ New</button>
+      </div>
+      <div id="session-list" class="session-list"></div>
+    </aside>
+
+    <!-- Center: Chat View -->
+    <main class="chat-view">
+      <div id="chat-container" class="chat-container">
+        <div class="system-notice">Welcome to Sowl Agent Harness. Enter a task below or press Ctrl+K for commands.</div>
+      </div>
+      <div class="input-area">
+        <textarea id="task-input" class="task-input" placeholder="Enter a task or instruction... (Enter sends, Shift+Enter newline, Esc cancels, /help for commands)" rows="2"></textarea>
+        <div class="input-actions">
+          <button id="btn-send" class="btn btn-primary">Send</button>
+          <button id="btn-cancel" class="btn btn-danger btn-hidden">Cancel</button>
+        </div>
+      </div>
+    </main>
+
+    <!-- Right Collapsible Panel: Skills, Trace, Live Token Stats -->
+    <aside class="right-panel" id="right-panel">
+      <div class="panel-section">
+        <div class="panel-header">Live Token Stats</div>
+        <div class="token-stats-grid">
+          <div class="stat-box">
+            <span class="stat-label">Prompt</span>
+            <span id="stat-prompt" class="stat-val">0</span>
+          </div>
+          <div class="stat-box">
+            <span class="stat-label">Completion</span>
+            <span id="stat-completion" class="stat-val">0</span>
+          </div>
+          <div class="stat-box">
+            <span class="stat-label">Reasoning</span>
+            <span id="stat-reasoning" class="stat-val">0</span>
+          </div>
+          <div class="stat-box">
+            <span class="stat-label">Cached</span>
+            <span id="stat-cached" class="stat-val">0</span>
+          </div>
+          <div class="stat-box stat-box-full">
+            <span class="stat-label">Throughput</span>
+            <span id="stat-speed" class="stat-val">0.0 tok/s</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <div class="panel-header">Active Run Steps</div>
+        <div id="run-step-trace" class="step-trace-list"></div>
+      </div>
+
+      <div class="panel-section">
+        <div class="panel-header">Registered Skills</div>
+        <div id="skills-list" class="skills-list"></div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Dedicated Confirmation Modal (Outside chat DOM) -->
+  <div id="confirm-modal" class="modal-overlay modal-hidden" role="dialog" aria-modal="true">
+    <div class="modal-card">
+      <div class="modal-header">
+        <span class="modal-title">⚠️ Tool Confirmation Required</span>
+        <span id="confirm-risk" class="risk-badge">R1</span>
+      </div>
+      <div class="modal-body">
+        <div class="confirm-meta-row">
+          <span class="meta-label">Tool:</span>
+          <span id="confirm-tool" class="meta-value"></span>
+        </div>
+        <div id="confirm-host-row" class="confirm-meta-row meta-hidden">
+          <span class="meta-label">Target Host:</span>
+          <span id="confirm-host" class="meta-value host-pill"></span>
+        </div>
+        <div class="confirm-meta-row">
+          <span class="meta-label">Action Hash:</span>
+          <span id="confirm-action-hash" class="meta-value hash-pill"></span>
+        </div>
+        <div class="confirm-args-header">Arguments:</div>
+        <pre id="confirm-args" class="confirm-args-block"></pre>
+      </div>
+      <div class="modal-footer">
+        <button id="btn-confirm-deny" class="btn btn-danger">Deny</button>
+        <button id="btn-confirm-approve" class="btn btn-success">Approve</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Modal (Outside chat DOM) -->
+  <div id="settings-modal" class="modal-overlay modal-hidden" role="dialog" aria-modal="true">
+    <div class="modal-card modal-card-large">
+      <div class="modal-header">
+        <span class="modal-title">System Settings &amp; Profiles</span>
+        <button id="btn-close-settings" class="btn-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="settings-section">
+          <h3>Model Profiles (Secrets Masked)</h3>
+          <div id="profiles-table-container"></div>
+        </div>
+        <div class="settings-section">
+          <h3>Laya Grounding Gate Configuration (Read-only)</h3>
+          <pre class="settings-pre">Mode: strict
+Grounding Auditor: identifier-only
+Provenance Tracking: enabled
+R3 Tool Execution: prohibited</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Command Palette Modal -->
+  <div id="palette-modal" class="modal-overlay modal-hidden" role="dialog" aria-modal="true">
+    <div class="modal-card modal-card-sm">
+      <input type="text" id="palette-input" class="palette-input" placeholder="Type a slash command (/help, /model, /skills, /trace, /clear)...">
+      <div id="palette-results" class="palette-results"></div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
