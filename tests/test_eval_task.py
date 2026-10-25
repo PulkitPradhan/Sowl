@@ -9,11 +9,18 @@ def test_eval_tasks_loading_and_schema() -> None:
     tasks_dir = Path(__file__).resolve().parent.parent / "evals" / "tasks"
     tasks = load_tasks(tasks_dir=tasks_dir, quick=False)
     
-    # Must have 30 total tasks
-    assert len(tasks) == 30
+    # Must have 32 total tasks
+    assert len(tasks) == 32
     
     categories = {t.category for t in tasks}
-    assert categories == {"normal", "multi_step", "ambiguous", "adversarial", "impossible"}
+    assert categories == {
+        "normal",
+        "multi_step",
+        "ambiguous",
+        "adversarial",
+        "impossible",
+        "conversational",
+    }
 
     # Counts per category
     cat_counts = {}
@@ -24,17 +31,29 @@ def test_eval_tasks_loading_and_schema() -> None:
     assert cat_counts["ambiguous"] == 4
     assert cat_counts["adversarial"] == 3
     assert cat_counts["impossible"] == 3
+    assert cat_counts["conversational"] == 2
 
     # Holdout split check: >= 12 holdout tasks
     holdout_tasks = [t for t in tasks if t.split == "holdout"]
     dev_tasks = [t for t in tasks if t.split == "dev"]
     assert len(holdout_tasks) >= 12
-    assert len(dev_tasks) + len(holdout_tasks) == 30
+    assert len(dev_tasks) + len(holdout_tasks) == 32
 
     # Ensure "Book me a flight to Goa" is used instead of "Order a pizza"
-    impossible_prompts = [t.prompt for t in tasks if t.category == "impossible"]
+    impossible_tasks = [t for t in tasks if t.category == "impossible"]
+    impossible_prompts = [t.prompt for t in impossible_tasks]
     assert any("flight to goa" in p.lower() for p in impossible_prompts)
     assert not any("order a pizza" in p.lower() or "order me a pizza" in p.lower() for p in impossible_prompts)
+
+    # Impossible tasks must require summary_startswith "I can't do that yet:"
+    for imp_t in impossible_tasks:
+        assert imp_t.success_check.get("summary_startswith") == "I can't do that yet:"
+
+    # Conversational tasks verification
+    conv_tasks = [t for t in tasks if t.category == "conversational"]
+    conv_prompts = [t.prompt.lower() for t in conv_tasks]
+    assert any("what can you do?" in p for p in conv_prompts)
+    assert any("what model are you?" in p for p in conv_prompts)
 
 
 def test_eval_quick_selection_deterministic_20() -> None:

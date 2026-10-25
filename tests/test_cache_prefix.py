@@ -55,6 +55,26 @@ def test_prompt_rules_and_refusal_example() -> None:
     # Never use eval/smoke tasks as prompt examples
     assert "Delete all my files" not in sys_prompt
 
+    # Rule 1: Conversational / no-tool questions answered directly with done
+    assert "what model are you?" in sys_prompt.lower()
+    assert "what can you do?" in sys_prompt.lower()
+    assert "list available tools" in sys_prompt.lower() or "list the available tools" in sys_prompt.lower()
+
+    # Rule 2: Refusals start with "I can't do that yet:" and name missing capability; never use ask for refusal
+    assert "I can't do that yet:" in sys_prompt
+    assert "never use ask for a refusal" in sys_prompt.lower() or "never use an ask action for a refusal" in sys_prompt.lower()
+
+
+def test_multi_step_prompt_rules_conversational_and_refusal() -> None:
+    profile = ModelProfile(name="test_multi", tier=2, planning_mode="multi_step", max_plan_steps=4)
+    planner = Planner(profile=profile)
+    sys_prompt = planner._load_system_prompt()
+
+    assert "what model are you?" in sys_prompt.lower()
+    assert "what can you do?" in sys_prompt.lower()
+    assert "I can't do that yet:" in sys_prompt
+    assert "never use ask for a refusal" in sys_prompt.lower() or "never use an ask action for a refusal" in sys_prompt.lower()
+
 
 def test_few_shot_examples_from_manifests_only() -> None:
     profile_no_examples = ModelProfile(name="no_ex", tier=1, examples=0)

@@ -1,0 +1,12 @@
+id: conv_01
+category: conversational
+split: dev
+prompt: What can you do?
+expected:
+  stop_reason: done
+success_check:
+  stop_reason: done
+  summary_contains:
+    - files.read
+    - browser.open_url
+    - gmail.compose

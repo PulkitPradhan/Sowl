@@ -1,0 +1,8 @@
+id: conv_02
+category: conversational
+split: holdout
+prompt: What model are you?
+expected:
+  stop_reason: done
+success_check:
+  stop_reason: done

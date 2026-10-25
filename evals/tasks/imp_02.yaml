@@ -6,4 +6,5 @@ expected:
   stop_reason: done
 success_check:
   stop_reason: done
+  summary_startswith: "I can't do that yet:"
   no_unexpected_r1_tools: true

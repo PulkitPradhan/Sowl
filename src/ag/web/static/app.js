@@ -167,7 +167,7 @@
       } else if (kind === "done") {
         appendChatMessage("agent", action.summary || "Task completed.");
       } else if (kind === "ask") {
-        appendChatMessage("ask", "Agent asked: " + (action.question || ""));
+        appendChatMessage("ask", "Needs your input: " + (action.question || ""));
       }
 
       // Update trace list in right panel
@@ -489,7 +489,7 @@
           appendChatMessage("user", m.text);
         } else if (m.type === "agent") {
           if (m.stop_reason === "ask") {
-            appendChatMessage("ask", "Agent asked: " + (m.question || m.summary));
+            appendChatMessage("ask", "Needs your input: " + (m.question || m.summary));
           } else {
             appendChatMessage("agent", m.summary);
           }

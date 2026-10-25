@@ -61,3 +61,11 @@ def test_app_js_uses_no_inner_html():
     assert "innerHTML" not in content, "innerHTML used in app.js - must use textContent or createTextNode"
     assert "outerHTML" not in content, "outerHTML used in app.js"
     assert "document.write" not in content, "document.write used in app.js"
+
+
+def test_app_js_renders_ask_as_needs_your_input():
+    """Verify app.js renders ask actions as 'Needs your input: '."""
+    app_js_path = STATIC_DIR / "app.js"
+    content = app_js_path.read_text(encoding="utf-8")
+    assert "Needs your input:" in content, "'Needs your input:' label missing in app.js for ask events"
+

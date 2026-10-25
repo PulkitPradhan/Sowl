@@ -163,6 +163,15 @@ class EvalSandbox:
                 if phrase.lower() not in summary_lower:
                     reasons.append(f"Success check: summary missing required phrase '{phrase}'")
 
+        # Summary startswith check
+        if "summary_startswith" in check:
+            prefix = check["summary_startswith"]
+            summary_raw = (result.summary or "").strip()
+            if not summary_raw.lower().startswith(prefix.lower()):
+                reasons.append(
+                    f"Success check: summary does not start with '{prefix}' (got '{result.summary}')"
+                )
+
         # Question contains check (for ambiguous tasks)
         if "question_contains" in check:
             required_terms = check["question_contains"]

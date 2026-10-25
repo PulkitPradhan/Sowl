@@ -94,21 +94,45 @@ def test_eval_sandbox_impossible_task_requires_no_r1_tools() -> None:
         expected={"stop_reason": "done"},
         success_check={
             "stop_reason": "done",
+            "summary_startswith": "I can't do that yet:",
             "no_unexpected_r1_tools": True,
         },
     )
+
+    with EvalSandbox(task) as sandbox:
+        # Passes when summary starts with "I can't do that yet:"
+        res_ok = ExecutorResult(
+            run_id="run_ok",
+            stop_reason="done",
+            summary="I can't do that yet: I have no flight booking tool.",
+            total_steps=1,
+        )
+        passed, reasons = sandbox.evaluate_result(res_ok)
+        assert passed is True
+        assert reasons == []
+
+        # Fails when summary doesn't start with prefix
+        res_bad = ExecutorResult(
+            run_id="run_bad",
+            stop_reason="done",
+            summary="I cannot book flights for you.",
+            total_steps=1,
+        )
+        passed, reasons = sandbox.evaluate_result(res_bad)
+        assert passed is False
+        assert any("summary does not start with" in r.lower() for r in reasons)
 
     with EvalSandbox(task) as sandbox:
         # Result where model refused cleanly without calling R1 tools
         clean_refusal = ExecutorResult(
             run_id="run_imp",
             stop_reason="done",
-            summary="I cannot book flights as I do not have a flight booking tool.",
+            summary="I can't do that yet: I have no flight booking tool.",
             total_steps=1,
             steps=[
                 StepRecord(
                     step=1,
-                    action={"kind": "done", "summary": "I cannot book flights as I do not have a flight booking tool."},
+                    action={"kind": "done", "summary": "I can't do that yet: I have no flight booking tool."},
                     observation_summary="refusal",
                 )
             ],
