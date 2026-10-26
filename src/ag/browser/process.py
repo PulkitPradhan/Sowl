@@ -42,24 +42,31 @@ def find_chrome_executable(config: BrowserConfig | None = None) -> str | None:
     return None
 
 
-def get_default_profile_dir() -> Path:
-    """Return ~/.ag/chrome-profile directory."""
+def _get_base_dir() -> Path:
+    """Return ~/.ag base directory, falling back to /tmp/.ag if read-only."""
     env_dir = os.environ.get("AG_WORKSPACE_DIR")
     if env_dir:
-        base = Path(env_dir).expanduser()
-    else:
-        base = Path("~/.ag").expanduser()
-    return base / "chrome-profile"
+        return Path(env_dir).expanduser()
+    target = Path("~/.ag").expanduser()
+    try:
+        if not target.exists():
+            target.mkdir(parents=True, exist_ok=True)
+            target.chmod(0o700)
+        return target
+    except OSError:
+        tmp_base = Path("/tmp/.ag")
+        tmp_base.mkdir(parents=True, exist_ok=True)
+        return tmp_base
+
+
+def get_default_profile_dir() -> Path:
+    """Return ~/.ag/chrome-profile directory."""
+    return _get_base_dir() / "chrome-profile"
 
 
 def get_default_pid_file() -> Path:
     """Return ~/.ag/browser.json PID tracking file."""
-    env_dir = os.environ.get("AG_WORKSPACE_DIR")
-    if env_dir:
-        base = Path(env_dir).expanduser()
-    else:
-        base = Path("~/.ag").expanduser()
-    return base / "browser.json"
+    return _get_base_dir() / "browser.json"
 
 
 def find_free_port() -> int:

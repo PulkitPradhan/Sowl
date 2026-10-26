@@ -159,6 +159,7 @@ class Planner:
         tools: dict[str, ToolManifest],
         history: list[tuple[Any, str]],
         run_delimiter: str,
+        skills: list[Any] | None = None,
     ) -> list[dict[str, str]]:
         """Construct KV-cache friendly messages: static prefix first, task, then history."""
         # 1. Static prefix: system prompt + tool table (no run IDs or timestamps)
@@ -178,6 +179,23 @@ class Planner:
 
         system_content = f"{sys_prompt}\n\nAvailable Tools:\n{tool_table}{examples_block}"
 
+        # Match on-demand skill instructions (loaded into user turn to preserve system prefix cache)
+        user_content = task
+        if skills:
+            t_lower = task.lower()
+            skill_blocks = []
+            for s in skills:
+                name_match = getattr(s, "name", "").lower() in t_lower
+                manifest = getattr(s, "manifest", None)
+                triggers = getattr(manifest, "triggers", []) if manifest else []
+                trigger_match = any(trig.lower() in t_lower for trig in triggers)
+                if (name_match or trigger_match) and hasattr(s, "get_instructions"):
+                    inst = s.get_instructions().strip()
+                    if inst:
+                        skill_blocks.append(f"\n\n[Active Skill '{s.name}' Instructions]:\n{inst}")
+            if skill_blocks:
+                user_content += "".join(skill_blocks)
+
         # Prepare editable observation list for context budgeting
         observations = [obs for _, obs in history]
 
@@ -185,7 +203,7 @@ class Planner:
         reserved_output = 500
 
         def _estimate_total() -> int:
-            text_blocks = [system_content, task]
+            text_blocks = [system_content, user_content]
             for act, obs in zip([a for a, _ in history], observations, strict=False):
                 act_str = json.dumps(act) if isinstance(act, dict) else str(act)
                 text_blocks.extend([act_str, obs])
@@ -203,7 +221,7 @@ class Planner:
         # Assemble final messages
         messages: list[dict[str, str]] = [
             {"role": "system", "content": system_content},
-            {"role": "user", "content": task},
+            {"role": "user", "content": user_content},
         ]
 
         for (action, _), obs_content in zip(history, observations, strict=False):
@@ -236,11 +254,12 @@ class Planner:
         history: list[tuple[Any, str]] | None = None,
         run_delimiter: str | None = None,
         max_tokens: int | None = None,
+        skills: list[Any] | None = None,
     ) -> tuple[Action, ModelResponse]:
         """Generate the next validated agent action from the model."""
         hist = history or []
         delimiter = run_delimiter or secrets.token_hex(8)
-        messages = self.build_messages(task, tools, hist, run_delimiter=delimiter)
+        messages = self.build_messages(task, tools, hist, run_delimiter=delimiter, skills=skills)
 
         # Estimate prompt tokens for silent undercount check
         all_text = " ".join(m["content"] for m in messages)

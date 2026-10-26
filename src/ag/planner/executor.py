@@ -290,6 +290,7 @@ class Executor:
                     )
 
                 # Call planner
+                skills_list = self.registry.list_skills()
                 try:
                     action, response = await self.planner.next_action(
                         task=task,
@@ -297,6 +298,7 @@ class Executor:
                         history=history,
                         run_delimiter=run_delimiter,
                         max_tokens=current_max_tokens,
+                        skills=skills_list,
                     )
                 except TruncatedOutputError:
                     # Retry once with doubled token budget if length truncation occurred
@@ -309,6 +311,7 @@ class Executor:
                                 history=history,
                                 run_delimiter=run_delimiter,
                                 max_tokens=current_max_tokens,
+                                skills=skills_list,
                             )
                         except Exception as err:  # noqa: BLE001
                             return self._finish(rid, "error", f"Model output truncated: {err}", step_records, start_time)
