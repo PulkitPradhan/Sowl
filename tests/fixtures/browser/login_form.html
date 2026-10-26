@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Login and Security Form</title>
+</head>
+<body>
+  <h1>Account Access</h1>
+  <form id="login-form">
+    <label for="username">Username:</label>
+    <input type="text" id="username" name="username" placeholder="Username" />
+
+    <label for="password">Password:</label>
+    <input type="password" id="password" name="password" />
+
+    <label for="otp">One Time Code:</label>
+    <input type="text" id="otp" name="otp" autocomplete="one-time-code" />
+
+    <label for="card">Credit Card Number:</label>
+    <input type="text" id="card" name="card" autocomplete="cc-number" />
+
+    <button type="submit" id="submit-btn">Log In</button>
+  </form>
+</body>
+</html>

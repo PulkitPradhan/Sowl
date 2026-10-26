@@ -1,0 +1,13 @@
+id: browser_06
+category: browser
+split: holdout
+prompt: Type the username alice into input field @e1 in the browser.
+expected:
+  first_tool: browser.type
+  first_args:
+    ref: "@e1"
+    text: alice
+  stop_reason: done
+success_check:
+  stop_reason: done
+  tool_called: browser.type

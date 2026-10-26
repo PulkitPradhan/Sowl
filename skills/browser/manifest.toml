@@ -1,12 +1,13 @@
 name = "browser"
-summary = "Open URLs in web browser (restricted to http and https)"
-triggers = ["open url", "browse", "view web", "open site", "visit"]
-examples = ["Open https://example.com in browser", "Browse documentation"]
+summary = "Web browsing and controlled browser automation via accessibility snapshots"
+triggers = ["open url", "browse", "view web", "open site", "visit", "click", "type", "snapshot", "scroll", "web page"]
+examples = ["Open https://example.com in browser", "Navigate to docs and click first button", "Take a snapshot of current page"]
 
 [[tools]]
 name = "browser.open_url"
-summary = "Open an http or https URL in the default web browser"
+summary = "Open an http or https URL in the default system web browser"
 risk = "R1"
+timeout_s = 10
 handler = "ag.skills.builtin.browser:open_url"
 pre_conditions = ["valid_url"]
 post_conditions = ["url_opened"]
@@ -14,5 +15,136 @@ post_conditions = ["url_opened"]
 [tools.args.url]
 type = "string"
 kind = "identifier"
-description = "HTTP or HTTPS URL to open"
+description = "HTTP or HTTPS URL to open in default browser"
 required = true
+
+[[tools]]
+name = "browser.goto"
+summary = "Navigate the controlled browser page to an HTTP or HTTPS URL"
+risk = "R1"
+timeout_s = 30
+handler = "ag.skills.builtin.browser:goto"
+pre_conditions = ["valid_url"]
+post_conditions = ["url_opened"]
+
+[tools.args.url]
+type = "string"
+kind = "identifier"
+description = "HTTP or HTTPS URL to navigate to in controlled browser"
+required = true
+
+[[tools]]
+name = "browser.snapshot"
+summary = "Capture URL, title, and a compact TOON table of visible interactive elements with refs (@e1, @e2)"
+risk = "R0"
+timeout_s = 10
+handler = "ag.skills.builtin.browser:snapshot"
+
+[[tools]]
+name = "browser.read_text"
+summary = "Read visible text content from the current page or a specific element ref"
+risk = "R0"
+timeout_s = 10
+handler = "ag.skills.builtin.browser:read_text"
+
+[tools.args.ref]
+type = "string"
+kind = "identifier"
+description = "Optional element ref (@e1) to read text from; omit to read whole page"
+required = false
+
+[tools.args.max_chars]
+type = "integer"
+kind = "other"
+description = "Maximum characters to return (default 2000, capped at 8000)"
+required = false
+
+[[tools]]
+name = "browser.links"
+summary = "Extract deduplicated links matching substring patterns from the current page"
+risk = "R0"
+timeout_s = 10
+handler = "ag.skills.builtin.browser:links"
+
+[tools.args.patterns]
+type = "array"
+kind = "other"
+description = "List of substring patterns to match against href attributes (e.g. ['/p/', '/reel/'])"
+required = false
+
+[tools.args.max]
+type = "integer"
+kind = "other"
+description = "Maximum number of links to return (default 100)"
+required = false
+
+[[tools]]
+name = "browser.scroll"
+summary = "Scroll the controlled browser page up or down"
+risk = "R0"
+timeout_s = 10
+handler = "ag.skills.builtin.browser:scroll"
+
+[tools.args.direction]
+type = "string"
+kind = "other"
+description = "Scroll direction: 'up' or 'down' (default 'down')"
+required = false
+
+[tools.args.amount]
+type = "string"
+kind = "other"
+description = "Scroll amount: 'page', 'half_page', or 'small' (default 'page')"
+required = false
+
+[[tools]]
+name = "browser.click"
+summary = "Click an interactive element identified by ref (@e1, @e2) from the latest snapshot"
+risk = "R1"
+timeout_s = 10
+handler = "ag.skills.builtin.browser:click"
+
+[tools.args.ref]
+type = "string"
+kind = "identifier"
+description = "Element ref from latest snapshot (@e1, @e2)"
+required = true
+
+[[tools]]
+name = "browser.type"
+summary = "Type text into an editable element ref (@e1) from the latest snapshot"
+risk = "R1"
+timeout_s = 10
+handler = "ag.skills.builtin.browser:type_text"
+
+[tools.args.ref]
+type = "string"
+kind = "identifier"
+description = "Element ref from latest snapshot (@e1)"
+required = true
+
+[tools.args.text]
+type = "string"
+kind = "text"
+description = "Text to type into the element"
+required = true
+
+[[tools]]
+name = "browser.back"
+summary = "Navigate backward in browser history"
+risk = "R0"
+timeout_s = 10
+handler = "ag.skills.builtin.browser:back"
+
+[[tools]]
+name = "browser.wait"
+summary = "Wait for a bounded duration (up to 10s) for page updates"
+risk = "R0"
+timeout_s = 10
+handler = "ag.skills.builtin.browser:wait"
+
+[tools.args.seconds]
+type = "number"
+kind = "other"
+description = "Seconds to wait (0.1 to 10.0)"
+required = false

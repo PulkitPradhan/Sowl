@@ -1,0 +1,10 @@
+id: browser_03
+category: browser
+split: dev
+prompt: Take an accessibility snapshot of the current web page to see interactive buttons and inputs.
+expected:
+  first_tool: browser.snapshot
+  stop_reason: done
+success_check:
+  stop_reason: done
+  tool_called: browser.snapshot

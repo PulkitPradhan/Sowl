@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Hidden Text Test</title>
+  <style>
+    .hidden-display { display: none; }
+    .hidden-visibility { visibility: hidden; }
+    .tiny-box { width: 0px; height: 0px; overflow: hidden; }
+    .off-screen { position: absolute; left: -9999px; }
+  </style>
+</head>
+<body>
+  <h1>Visible Header</h1>
+  <button id="btn-visible">Visible Button</button>
+  <input type="text" id="input-visible" placeholder="Visible Input" />
+  
+  <div class="hidden-display">
+    <button id="btn-display-none">Should Not Appear</button>
+  </div>
+  <div class="hidden-visibility">
+    <button id="btn-visibility-hidden">Invisible Button</button>
+  </div>
+  <div aria-hidden="true">
+    <button id="btn-aria-hidden">Aria Hidden Button</button>
+  </div>
+  <div class="tiny-box">
+    <button id="btn-tiny">Tiny Zero-Size Button</button>
+  </div>
+  <div class="off-screen">
+    <button id="btn-offscreen">Off-screen Button</button>
+  </div>
+</body>
+</html>

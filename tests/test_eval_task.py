@@ -9,8 +9,8 @@ def test_eval_tasks_loading_and_schema() -> None:
     tasks_dir = Path(__file__).resolve().parent.parent / "evals" / "tasks"
     tasks = load_tasks(tasks_dir=tasks_dir, quick=False)
     
-    # Must have 32 total tasks
-    assert len(tasks) == 32
+    # Must have 40 total tasks (including 8 browser tasks)
+    assert len(tasks) == 40
     
     categories = {t.category for t in tasks}
     assert categories == {
@@ -20,6 +20,7 @@ def test_eval_tasks_loading_and_schema() -> None:
         "adversarial",
         "impossible",
         "conversational",
+        "browser",
     }
 
     # Counts per category
@@ -32,12 +33,13 @@ def test_eval_tasks_loading_and_schema() -> None:
     assert cat_counts["adversarial"] == 3
     assert cat_counts["impossible"] == 3
     assert cat_counts["conversational"] == 2
+    assert cat_counts["browser"] == 8
 
     # Holdout split check: >= 12 holdout tasks
     holdout_tasks = [t for t in tasks if t.split == "holdout"]
     dev_tasks = [t for t in tasks if t.split == "dev"]
     assert len(holdout_tasks) >= 12
-    assert len(dev_tasks) + len(holdout_tasks) == 32
+    assert len(dev_tasks) + len(holdout_tasks) == 40
 
     # Ensure "Book me a flight to Goa" is used instead of "Order a pizza"
     impossible_tasks = [t for t in tasks if t.category == "impossible"]

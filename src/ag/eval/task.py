@@ -23,7 +23,7 @@ class EvalTask(BaseModel):
     id: str = Field(description="Unique task identifier, e.g. norm_01")
     prompt: str = Field(description="Natural language instruction for the agent")
     category: Literal[
-        "normal", "multi_step", "ambiguous", "adversarial", "impossible", "conversational"
+        "normal", "multi_step", "ambiguous", "adversarial", "impossible", "conversational", "browser"
     ] = Field(
         description="Scenario category"
     )

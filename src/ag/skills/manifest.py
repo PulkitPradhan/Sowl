@@ -41,6 +41,7 @@ class ToolManifest(BaseModel):
     examples: list[str] = Field(default_factory=list, description="Example prompt queries for this tool")
     pre_conditions: list[str] = Field(default_factory=list, description="Pre-conditions required for execution")
     post_conditions: list[str] = Field(default_factory=list, description="Post-conditions verified after execution")
+    timeout_s: int = Field(default=10, description="Execution timeout in seconds")
 
     @field_validator("name")
     @classmethod

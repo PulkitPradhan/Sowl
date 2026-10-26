@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Stale Ref Dynamic Test</title>
+</head>
+<body>
+  <h1>Dynamic UI</h1>
+  <div id="content">
+    <button id="dynamic-btn" onclick="replaceButton()">Original Action</button>
+  </div>
+  <script>
+    function replaceButton() {
+      const container = document.getElementById('content');
+      container.innerHTML = '<a href="/next" id="replaced-link">Different Link</a>';
+    }
+  </script>
+</body>
+</html>

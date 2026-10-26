@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Infinite Scroll Test</title>
+  <style>
+    body { height: 3000px; margin: 0; padding: 20px; font-family: sans-serif; }
+    .item { padding: 15px; margin-bottom: 10px; background: #eee; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h1>Feed Items</h1>
+  <div id="container">
+    <div class="item"><a href="/p/post1">Post 1</a></div>
+    <div class="item"><a href="/reel/reel1">Reel 1</a></div>
+    <div class="item"><a href="/p/post2">Post 2</a></div>
+  </div>
+  <script>
+    let count = 2;
+    window.addEventListener('scroll', () => {
+      if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 500) {
+        for (let i = 0; i < 3; i++) {
+          count++;
+          const div = document.createElement('div');
+          div.className = 'item';
+          div.innerHTML = `<a href="/reel/reel${count}">Reel ${count}</a>`;
+          document.getElementById('container').appendChild(div);
+        }
+      }
+    });
+  </script>
+</body>
+</html>

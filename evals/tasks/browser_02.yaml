@@ -1,0 +1,10 @@
+id: browser_02
+category: browser
+split: holdout
+prompt: Read the visible text from the currently open browser page.
+expected:
+  first_tool: browser.read_text
+  stop_reason: done
+success_check:
+  stop_reason: done
+  tool_called: browser.read_text

@@ -72,3 +72,20 @@ Sowl protects against prompt injection, ungrounded actions, and hallucinated ide
 - **URL & Contacts Safety**: Restricts non-HTTP(S) protocols, flags IP literals/punycode/private networks, and grounds contact lookups via `contacts.toml`.
 - **Monotonic Layer B Judge**: Optional secondary LLM judge that can strictly escalate safety decisions (allow -> confirm/block) without loosening Layer A deterministic rules.
 
+### 7. Controlled Browser Automation
+Sowl controls a dedicated Chromium profile (`~/.ag/chrome-profile`) over loopback Chrome DevTools Protocol (CDP) via Playwright:
+```bash
+# Start the dedicated browser daemon with loopback CDP
+ag browser start
+
+# Check browser status
+ag browser status
+
+# Stop browser
+ag browser stop
+```
+- **Accessibility Snapshots**: Generates compact TOON tables (`elements[N]{ref,role,name}`) using sequential refs (`@e1`, `@e2`), avoiding DOM injection.
+- **Dynamic Re-Resolution**: Re-resolves elements on click, checking role and text against the snapshot to detect stale DOM elements.
+- **Safety Guards**: Refuses password and payment fields, escalates sensitive buttons (send, checkout, delete, pay) to R2 human confirmation, and permanently blocks engagement actions (likes, follows, comments) on social domains (R3).
+
+

@@ -42,16 +42,16 @@ def format_tool_signature(tool: ToolManifest) -> str:
     return ", ".join(parts)
 
 
-def format_tool_table(tools: dict[str, ToolManifest]) -> str:
+def format_tool_table(tools: dict[str, ToolManifest], max_tools: int = 12) -> str:
     """Format tools into a compact TOON table for prompt inclusion.
 
     Columns: name, risk, args, summary.
-    Fails loudly if there are more than 12 tools.
+    Fails loudly if there are more than max_tools (default 12).
     """
-    if len(tools) > 12:
+    if len(tools) > max_tools:
         raise TooManyToolsError(
             f"Too many tools ({len(tools)}) registered for planner. "
-            "Maximum supported tools before Phase 7 Router is 12."
+            f"Maximum supported tools is {max_tools}."
         )
 
     rows = []
@@ -163,7 +163,8 @@ class Planner:
         """Construct KV-cache friendly messages: static prefix first, task, then history."""
         # 1. Static prefix: system prompt + tool table (no run IDs or timestamps)
         sys_prompt = self._load_system_prompt()
-        tool_table = format_tool_table(tools)
+        max_tools = getattr(self.profile, "max_tools", 20)
+        tool_table = format_tool_table(tools, max_tools=max_tools)
         examples_block = ""
         if getattr(self.profile, "examples", 0) == 1:
             all_examples = []

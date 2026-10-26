@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import inspect
 import os
 from pathlib import Path
 from typing import Any
@@ -139,11 +140,30 @@ class SkillRegistry:
         """Retrieve a skill by name."""
         return self.skills.get(name)
 
-    def get_tools(self) -> dict[str, ToolManifest]:
-        """Return a mapping of fully-qualified tool name to ToolManifest."""
+    def get_tools(self, attached_browser: bool | None = None) -> dict[str, ToolManifest]:
+        """Return a mapping of fully-qualified tool name to ToolManifest.
+
+        Filters out controlled browser.* tools (except browser.open_url) unless the
+        dedicated browser is currently attached.
+        """
+        if attached_browser is None:
+            if os.environ.get("AG_BROWSER_ATTACHED") == "1":
+                is_attached = True
+            else:
+                try:
+                    from ag.browser.process import is_browser_attached
+                    is_attached = is_browser_attached()
+                except Exception:  # noqa: BLE001
+                    is_attached = False
+        else:
+            is_attached = attached_browser
+
         tools: dict[str, ToolManifest] = {}
         for skill in self.skills.values():
             for tool in skill.tools:
+                # If browser is not attached, list only browser.open_url among browser tools
+                if not is_attached and tool.name.startswith("browser.") and tool.name != "browser.open_url":
+                    continue
                 tools[tool.name] = tool
         return tools
 
@@ -214,16 +234,20 @@ class SkillRegistry:
         except Exception as err:  # noqa: BLE001
             return {"ok": False, "data": None, "error": f"Could not load handler '{tool.handler}': {err}"}
 
-        # Execute with 10s timeout via asyncio.to_thread
+        # Execute with per-tool timeout (coroutine or thread)
+        timeout = float(getattr(tool, "timeout_s", 10) or 10.0)
         try:
-            result = await asyncio.wait_for(
-                asyncio.to_thread(func, **args),
-                timeout=10.0,
-            )
+            if inspect.iscoroutinefunction(func):
+                result = await asyncio.wait_for(func(**args), timeout=timeout)
+            else:
+                result = await asyncio.wait_for(
+                    asyncio.to_thread(func, **args),
+                    timeout=timeout,
+                )
             if isinstance(result, dict) and "ok" in result:
                 return result
             return {"ok": True, "data": result, "error": None}
         except TimeoutError:
-            return {"ok": False, "data": None, "error": f"Tool '{tool_name}' timed out after 10 seconds"}
+            return {"ok": False, "data": None, "error": f"Tool '{tool_name}' timed out after {int(timeout)} seconds"}
         except Exception as err:  # noqa: BLE001
             return {"ok": False, "data": None, "error": f"Tool '{tool_name}' execution error: {err}"}

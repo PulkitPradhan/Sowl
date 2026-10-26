@@ -6,7 +6,7 @@ import ipaddress
 import urllib.parse
 
 
-def check_url(url: str, web_port: int = 3180) -> tuple[bool, list[str], str]:
+def check_url(url: str, web_port: int = 3180, cdp_port: int | None = None) -> tuple[bool, list[str], str]:
     """Inspect URL for safety violations and risk factors.
 
     Returns:
@@ -18,6 +18,9 @@ def check_url(url: str, web_port: int = 3180) -> tuple[bool, list[str], str]:
         return True, [f"Invalid URL structure: {err}"], ""
 
     scheme = (parsed.scheme or "").lower()
+    if scheme in ("file", "chrome", "view-source", "data", "javascript"):
+        return True, [f"Disallowed high-risk URL scheme '{scheme}:'. Execution is blocked."], ""
+
     if scheme not in ("http", "https"):
         return True, [f"Disallowed URL scheme '{scheme}': only http and https are permitted"], ""
 
@@ -55,13 +58,16 @@ def check_url(url: str, web_port: int = 3180) -> tuple[bool, list[str], str]:
     if not is_ip and (hostname == "localhost" or hostname.endswith(".localhost")):
         warnings.append(f"URL targets local loopback host '{hostname}'")
 
-    # 4. Check web port target
+    # 4. Check sensitive local ports (web harness 3180, Ollama 11434, CDP port)
     try:
         port = parsed.port
-        if port == web_port or (
-            port is not None and port == 3180 and hostname in ("127.0.0.1", "localhost", "::1")
-        ):
-            warnings.append(f"URL targets Sowl web harness control port {web_port}")
+        if port is not None:
+            if port == web_port or (port == 3180 and (is_ip or "localhost" in hostname)):
+                warnings.append(f"URL targets Sowl web harness control port {web_port}")
+            elif port == 11434 and (is_ip or "localhost" in hostname):
+                warnings.append("URL targets Ollama inference server port 11434")
+            elif cdp_port is not None and port == cdp_port:
+                warnings.append(f"URL targets dedicated browser CDP port {cdp_port}")
     except ValueError:
         pass
 

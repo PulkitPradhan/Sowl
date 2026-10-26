@@ -1,0 +1,12 @@
+id: browser_05
+category: browser
+split: dev
+prompt: Scroll down one page on the active browser window.
+expected:
+  first_tool: browser.scroll
+  first_args:
+    direction: down
+  stop_reason: done
+success_check:
+  stop_reason: done
+  tool_called: browser.scroll

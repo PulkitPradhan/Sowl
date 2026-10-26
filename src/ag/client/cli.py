@@ -289,6 +289,53 @@ def get_app():
             typer.secho(f"Failed to stop agentd: {err}", fg=typer.colors.RED)
             raise typer.Exit(code=1)
 
+    browser_app = typer.Typer(name="browser", help="Manage dedicated controlled browser instance")
+    app.add_typer(browser_app, name="browser")
+
+    @browser_app.command(name="start")
+    def browser_start(
+        port: Annotated[int | None, typer.Option("--port", "-p", help="Remote debugging port")] = None,
+    ) -> None:
+        """Start the dedicated Chrome browser instance with loopback CDP."""
+        from ag.browser.process import start_browser
+
+        try:
+            info = asyncio.run(start_browser(port=port))
+            typer.secho(
+                f"Dedicated browser started (PID {info['pid']}) on {info['cdp_url']}",
+                fg=typer.colors.GREEN,
+            )
+        except Exception as err:  # noqa: BLE001
+            typer.secho(f"Failed to start browser: {err}", fg=typer.colors.RED)
+            raise typer.Exit(code=1)
+
+    @browser_app.command(name="status")
+    def browser_status_cmd() -> None:
+        """Check status of dedicated Chrome browser instance."""
+        from ag.browser.process import get_browser_status
+
+        info = asyncio.run(get_browser_status())
+        if info["running"]:
+            typer.secho(
+                f"Browser is running: PID {info['pid']}, CDP: {info['cdp_url']} ({info.get('browser', 'Chrome')})",
+                fg=typer.colors.GREEN,
+            )
+        else:
+            typer.secho("Browser is stopped.", fg=typer.colors.YELLOW)
+
+    @browser_app.command(name="stop")
+    def browser_stop_cmd() -> None:
+        """Stop dedicated Chrome browser instance."""
+        from ag.browser.process import stop_browser
+        from ag.browser.session import reset_browser_session
+
+        asyncio.run(reset_browser_session())
+        stopped = asyncio.run(stop_browser())
+        if stopped:
+            typer.secho("Browser stopped.", fg=typer.colors.GREEN)
+        else:
+            typer.secho("Browser was not running.", fg=typer.colors.YELLOW)
+
     session_app = typer.Typer(name="session", help="Manage persistent sessions")
     app.add_typer(session_app, name="session")
 

@@ -1,0 +1,12 @@
+id: browser_04
+category: browser
+split: holdout
+prompt: Extract all links on the current page that contain /p/ or /reel/.
+expected:
+  first_tool: browser.links
+  first_args:
+    patterns: ["/p/", "/reel/"]
+  stop_reason: done
+success_check:
+  stop_reason: done
+  tool_called: browser.links

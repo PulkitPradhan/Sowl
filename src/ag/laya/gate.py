@@ -11,6 +11,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from ag.browser.config import is_engagement_action, is_escalation_label
 from ag.laya.judge import LayaJudge
 from ag.laya.provenance import (
     ProvenanceSource,
@@ -98,6 +99,83 @@ class LayaGate:
                 payload=dict(args),
             )
 
+        # 1b. Browser-specific safety & engagement guard checks
+        label = str(action.get("_element_label") or "")
+        page_url = str(action.get("_page_url") or "")
+        elem_type = str(action.get("_element_type") or "").lower()
+        elem_auto = str(action.get("_element_autocomplete") or "").lower()
+        elem_role = str(action.get("_element_role") or "").lower()
+
+        if not label and tool_name.startswith("browser."):
+            ref = args.get("ref")
+            if ref:
+                try:
+                    from ag.browser.session import _global_session
+                    if _global_session:
+                        elem = _global_session.snapshot_engine.get_element(str(ref))
+                        if elem:
+                            label = elem.name
+                            elem_type = elem.element_type
+                            elem_auto = elem.autocomplete
+                            elem_role = elem.role
+                            if _global_session.current_page:
+                                page_url = _global_session.current_page.url
+                except Exception:  # noqa: BLE001, S110
+                    pass
+
+        # Engagement guard on social domains -> R3 Block
+        if is_engagement_action(label, page_url):
+            return LayaDecision(
+                action="block",
+                reasons=[f"Social engagement action '{label}' on domain '{page_url}' is classified as R3 prohibited risk."],
+                layer_a_verdict="block",
+                payload=dict(args),
+            )
+
+        if tool_name == "browser.type":
+            if elem_type == "password" or "password" in elem_auto:
+                return LayaDecision(
+                    action="block",
+                    reasons=["Security refusal: typing into password fields is prohibited."],
+                    layer_a_verdict="block",
+                    payload=dict(args),
+                )
+            if elem_auto == "one-time-code" or "otp" in elem_auto:
+                return LayaDecision(
+                    action="block",
+                    reasons=["Security refusal: typing into one-time-code / OTP fields is prohibited."],
+                    layer_a_verdict="block",
+                    payload=dict(args),
+                )
+            if elem_auto.startswith("cc-") or "card" in elem_auto:
+                return LayaDecision(
+                    action="block",
+                    reasons=["Security refusal: typing into payment/credit card fields is prohibited."],
+                    layer_a_verdict="block",
+                    payload=dict(args),
+                )
+            if elem_role in ("comment_box", "reply_box", "message_box") or (
+                is_engagement_action("comment", page_url)
+                and any(k in label.lower() for k in ("comment", "reply", "message"))
+            ):
+                return LayaDecision(
+                    action="block",
+                    reasons=["Security refusal: typing into comment/reply/message boxes on social domains is prohibited (R3)."],
+                    layer_a_verdict="block",
+                    payload=dict(args),
+                )
+
+        effective_risk = manifest.risk
+        if tool_name == "browser.click":
+            if elem_type == "submit":
+                effective_risk = "R2"
+                reasons.append("Element type='submit' escalated to R2 high risk.")
+                never_auto_approve = True
+            elif is_escalation_label(label):
+                effective_risk = "R2"
+                reasons.append(f"Action label '{label}' matched high-risk escalation pattern and was escalated to R2.")
+                never_auto_approve = True
+
         # 2. Check identifiers in args
         for arg_name, arg_val in args.items():
             field_def = manifest.args.get(arg_name)
@@ -139,7 +217,7 @@ class LayaGate:
         url_target = None
         if "url" in args and isinstance(args["url"], str):
             url_target = args["url"]
-        elif tool_name == "browser.open_url" and "url" in args:
+        elif tool_name in ("browser.open_url", "browser.goto") and "url" in args:
             url_target = str(args["url"])
 
         if url_target:
@@ -169,11 +247,11 @@ class LayaGate:
         final_action: Literal["allow", "confirm", "block"] = "allow"
 
         # R0: Allowed. Taint propagates, but does NOT trigger confirm for R0 inside workspace
-        if manifest.risk == "R0":
+        if effective_risk == "R0":
             final_action = "allow"
 
         # R1: Confirm by default. Allowed if auto_approved and not tainted
-        elif manifest.risk == "R1":
+        elif effective_risk == "R1":
             if is_tainted or never_auto_approve:
                 final_action = "confirm"
                 never_auto_approve = True
@@ -183,7 +261,7 @@ class LayaGate:
                 final_action = "confirm"
 
         # R2: Always confirms with exact untruncated payload
-        elif manifest.risk == "R2":
+        elif effective_risk == "R2":
             final_action = "confirm"
             never_auto_approve = True
 
