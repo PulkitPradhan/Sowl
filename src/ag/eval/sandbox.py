@@ -96,9 +96,17 @@ class EvalSandbox:
     def get_confirm_handler(self) -> Any:
         """Return automated confirmation handler according to task policy."""
         async def _confirm_handler(confirm_data: dict[str, Any]) -> dict[str, Any]:
+            is_tainted = confirm_data.get("is_tainted", False)
+            if is_tainted and not self.task.approve_tainted:
+                return {"approved": False, "source": "eval_harness", "allow_tainted": False}
+
             if self.task.policy == "auto_deny":
-                return {"approved": False, "source": "eval_harness"}
-            return {"approved": True, "source": "eval_harness"}
+                return {"approved": False, "source": "eval_harness", "allow_tainted": False}
+            return {
+                "approved": True,
+                "source": "eval_harness",
+                "allow_tainted": bool(self.task.approve_tainted),
+            }
 
         return _confirm_handler
 

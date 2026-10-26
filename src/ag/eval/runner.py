@@ -8,7 +8,7 @@ import subprocess
 import time
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 from pydantic import BaseModel, Field
@@ -17,6 +17,7 @@ from ag.eval.grounding import audit_grounding
 from ag.eval.resources import ProcessGpuSampler
 from ag.eval.sandbox import EvalSandbox
 from ag.eval.task import EvalTask, compute_task_set_hash, load_tasks
+from ag.laya.judge import LayaJudge
 from ag.models.profile import load_profile
 from ag.models.provider import ModelProvider, OpenAIProvider
 from ag.planner.executor import Executor
@@ -35,6 +36,10 @@ class TaskRunRecord(BaseModel):
     first_tool_accuracy: bool = False
     arg_accuracy: bool = False
     hallucination_leaks: list[str] = Field(default_factory=list)
+    invented_leaks: list[str] = Field(default_factory=list)
+    tainted_identifiers: list[str] = Field(default_factory=list)
+    grounded_identifiers: list[str] = Field(default_factory=list)
+    laya_blocked: bool = False
     steps: int = 0
     llm_calls: int = 0
     first_step_latency_ms: float = 0.0
@@ -66,6 +71,12 @@ class AggregateMetrics(BaseModel):
     arg_accuracy_rate: float = 0.0
 
     total_hallucination_leaks: int = 0
+    total_invented: int = 0
+    total_tainted: int = 0
+    total_grounded: int = 0
+    laya_catches: int = 0
+    laya_blocks: int = 0
+    over_block_rate: float = 0.0
     category_counts: dict[str, dict[str, int]] = Field(default_factory=dict)
     consistency: dict[str, int] = Field(default_factory=dict)
 
@@ -103,6 +114,7 @@ class EvalReport(BaseModel):
     examples: int
     runs: int
     quick: bool
+    laya_mode: str = "rules"
     cold_load_s: float
     metrics: AggregateMetrics
     runs_data: list[TaskRunRecord]
@@ -126,6 +138,18 @@ def calculate_aggregate_metrics(records: list[TaskRunRecord]) -> AggregateMetric
     arg_acc_cnt = sum(1 for r in records if r.arg_accuracy)
 
     all_leaks = sum(len(r.hallucination_leaks) for r in records)
+    total_inv = sum(len(r.invented_leaks) for r in records)
+    total_tnt = sum(len(r.tainted_identifiers) for r in records)
+    total_grd = sum(len(r.grounded_identifiers) for r in records)
+
+    # Over-block rate: blocks on non-adversarial/non-impossible tasks
+    should_succeed = [r for r in records if r.category not in ("adversarial", "impossible")]
+    over_blocks = sum(1 for r in should_succeed if r.laya_blocked or r.stop_reason == "blocked")
+    over_block_rate = round(over_blocks / len(should_succeed), 4) if should_succeed else 0.0
+
+    # Catches: blocks on adversarial or impossible tasks
+    catches = sum(1 for r in records if (r.category in ("adversarial", "impossible") and (r.laya_blocked or r.stop_reason in ("blocked", "denied"))))
+    blocks_cnt = sum(1 for r in records if r.laya_blocked or r.stop_reason == "blocked")
 
     # Categories breakdown
     categories: dict[str, dict[str, int]] = {}
@@ -184,6 +208,12 @@ def calculate_aggregate_metrics(records: list[TaskRunRecord]) -> AggregateMetric
         arg_accuracy_count=arg_acc_cnt,
         arg_accuracy_rate=round((arg_acc_cnt / total) * 100.0, 1),
         total_hallucination_leaks=all_leaks,
+        total_invented=total_inv,
+        total_tainted=total_tnt,
+        total_grounded=total_grd,
+        laya_catches=catches,
+        laya_blocks=blocks_cnt,
+        over_block_rate=over_block_rate,
         category_counts=categories,
         consistency=consistency,
         latency_p50_ms=round(p50, 1),
@@ -259,6 +289,7 @@ class EvalRunner:
         endpoint: str | None = None,
         monitor_process: str = "ollama",
         provider: ModelProvider | None = None,
+        laya_mode: Literal["off", "rules", "rules+judge"] = "rules",
     ) -> None:
         self.profile = load_profile(profile_name)
         if wire_format:
@@ -274,6 +305,7 @@ class EvalRunner:
         self.quick = quick
         self.monitor_process = monitor_process
         self.provider = provider or OpenAIProvider(self.profile)
+        self.laya_mode = laya_mode
 
     async def warm_up(self) -> float:
         """Issue a warm-up call and return cold load latency in seconds."""
@@ -308,17 +340,32 @@ class EvalRunner:
         with EvalSandbox(task, base_results_dir=base_results_dir) as sandbox:
             trace_logger = TraceLogger(traces_dir=sandbox.traces_dir)
             hallucination_leaks: list[str] = []
+            invented_leaks: list[str] = []
+            tainted_identifiers: list[str] = []
+            grounded_identifiers: list[str] = []
+            obs_history: list[tuple[Any, str]] = []
 
             # Event handler to intercept proposed actions for grounding auditing
             async def event_handler(event: dict[str, Any]) -> None:
-                if event.get("type") == "step":
+                if event.get("type") == "observation":
+                    obs_history.append(({"tool": event.get("tool")}, event.get("observation", "")))
+                elif event.get("type") == "step":
                     act = event.get("action", {})
                     if act.get("kind") == "tool":
                         tool_name = act.get("tool", "")
                         args = act.get("args", {})
                         if tool_name in all_tools:
-                            leaks = audit_grounding(task.prompt, [], all_tools[tool_name], args)
-                            hallucination_leaks.extend(leaks)
+                            res = audit_grounding(
+                                task.prompt,
+                                obs_history,
+                                all_tools[tool_name],
+                                args,
+                                workspace_root=sandbox.workspace_root,
+                            )
+                            hallucination_leaks.extend(res.invented)
+                            invented_leaks.extend(res.invented)
+                            tainted_identifiers.extend(res.tainted)
+                            grounded_identifiers.extend(res.grounded)
 
             executor = Executor(
                 profile=self.profile,
@@ -329,6 +376,15 @@ class EvalRunner:
                 trace_logger=trace_logger,
                 max_steps=6,
             )
+
+            # Configure Laya Gate mode on executor
+            if self.laya_mode == "off":
+                executor.gate = None
+            elif self.laya_mode == "rules":
+                executor.gate.judge = None
+            elif self.laya_mode == "rules+judge":
+                judge_profile = self.profile.model_copy(update={"thinking": "off"})
+                executor.gate.judge = LayaJudge(provider=OpenAIProvider(judge_profile))
 
             # Set temperature and seed on profile for this run
             self.profile.temperature = temperature
@@ -343,6 +399,11 @@ class EvalRunner:
             # Record stats
             record.passed = passed
             record.failure_reasons = reasons
+            record.hallucination_leaks = hallucination_leaks
+            record.invented_leaks = invented_leaks
+            record.tainted_identifiers = tainted_identifiers
+            record.grounded_identifiers = grounded_identifiers
+            record.laya_blocked = (exec_result.stop_reason == "blocked")
             record.hallucination_leaks = hallucination_leaks
             record.steps = exec_result.total_steps
             record.duration_s = round(total_duration, 2)
@@ -428,6 +489,7 @@ class EvalRunner:
             examples=self.profile.examples,
             runs=self.runs,
             quick=self.quick,
+            laya_mode=self.laya_mode,
             cold_load_s=cold_load_s,
             metrics=metrics,
             runs_data=run_records,

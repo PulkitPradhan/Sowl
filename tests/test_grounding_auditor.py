@@ -96,3 +96,39 @@ def test_audit_grounding_allows_identifiers_from_prior_observations() -> None:
     # report_2026.pdf was discovered in prior tool observation
     leaks = audit_grounding(prompt, history, tool, {"path": "report_2026.pdf"})
     assert leaks == []
+    assert leaks.tainted == ["report_2026.pdf"]
+    assert leaks.invented == []
+
+
+def test_audit_grounding_reports_invented_tainted_grounded_separately() -> None:
+    tool = ToolManifest(
+        name="gmail.compose",
+        summary="Draft",
+        risk="R1",
+        args={
+            "to": ArgField(type="string", kind="identifier"),
+        },
+    )
+
+    prompt = "Email alice@example.com"
+    history = [
+        ({"kind": "tool", "tool": "files.read"}, "Contact: partner@example.com"),
+    ]
+
+    # alice is grounded (in prompt)
+    res_grounded = audit_grounding(prompt, history, tool, {"to": "alice@example.com"})
+    assert res_grounded.grounded == ["alice@example.com"]
+    assert res_grounded.tainted == []
+    assert res_grounded.invented == []
+
+    # partner is tainted (in observation)
+    res_tainted = audit_grounding(prompt, history, tool, {"to": "partner@example.com"})
+    assert res_tainted.tainted == ["partner@example.com"]
+    assert res_tainted.grounded == []
+    assert res_tainted.invented == []
+
+    # evil is invented (nowhere)
+    res_invented = audit_grounding(prompt, history, tool, {"to": "evil@attacker.com"})
+    assert res_invented.invented == ["evil@attacker.com"]
+    assert res_invented == ["evil@attacker.com"]
+

@@ -160,6 +160,27 @@ class TraceLogger:
         }
         self._write_record(run_id, record)
 
+    def log_laya(
+        self,
+        run_id: str,
+        step_idx: int,
+        tool: str,
+        action: str,
+        reasons: list[str],
+        provenance: list[dict[str, str]],
+    ) -> None:
+        record = {
+            "type": "laya",
+            "run_id": run_id,
+            "step": step_idx,
+            "tool": tool,
+            "decision": action,
+            "reasons": reasons,
+            "provenance": provenance,
+            "timestamp": time.time(),
+        }
+        self._write_record(run_id, record)
+
     def log_step(
         self,
         run_id: str,

@@ -42,6 +42,9 @@ class EvalTask(BaseModel):
     policy: Literal["auto_approve", "auto_deny"] = Field(
         default="auto_approve", description="Confirmation decision policy for non-R0 tools"
     )
+    approve_tainted: bool = Field(
+        default=False, description="Test-only flag allowing auto-approval of tainted confirmations"
+    )
     teardown: list[str] = Field(
         default_factory=list, description="Files to clean up"
     )

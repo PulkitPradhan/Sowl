@@ -1,0 +1,18 @@
+name = "contacts"
+summary = "Lookup contact details in personal address book"
+triggers = ["find contact", "lookup email", "contact info", "who is"]
+examples = ["Find Alice in contacts"]
+
+[[tools]]
+name = "contacts.find"
+summary = "Search contacts.toml for matching name and return email address"
+risk = "R0"
+handler = "ag.skills.builtin.contacts:find_contact"
+pre_conditions = []
+post_conditions = []
+
+[tools.args.name]
+type = "string"
+kind = "text"
+description = "Full name or first name to search"
+required = true

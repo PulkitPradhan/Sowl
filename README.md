@@ -59,9 +59,16 @@ ag session show <session_id>
 
 ### 5. Evaluation Harness
 ```bash
-# Run 20-task quick eval
-ag eval --profile tier2_gpu --quick
+# Run 20-task quick eval with Laya gate
+ag eval --profile tier2_gpu --laya rules --quick
 
 # Compare two evaluation runs
 ag eval compare evals/results/run_a.json evals/results/run_b.json
 ```
+
+### 6. Laya Decision & Safety Gate
+Sowl protects against prompt injection, ungrounded actions, and hallucinated identifiers via the Laya Gate (`src/ag/laya/`):
+- **Provenance & Taint Tracking**: Audits all identifier arguments (emails, URLs, file paths). Identifiers originating from untrusted tool outputs are flagged as tainted and require explicit human confirmation showing source origin.
+- **URL & Contacts Safety**: Restricts non-HTTP(S) protocols, flags IP literals/punycode/private networks, and grounds contact lookups via `contacts.toml`.
+- **Monotonic Layer B Judge**: Optional secondary LLM judge that can strictly escalate safety decisions (allow -> confirm/block) without loosening Layer A deterministic rules.
+

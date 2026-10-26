@@ -159,6 +159,15 @@ def get_app():
                                 host_info = f" ({host})" if host else ""
                                 typer.secho(f"\n⚠️  [Confirmation Required] Tool: {tool} [{risk}]{host_info}", fg=typer.colors.YELLOW, bold=True)
                                 typer.echo(f"  Arguments: {json.dumps(evt.get('args', {}), indent=2)}")
+                                prov_list = evt.get("provenance", [])
+                                if prov_list:
+                                    typer.secho("  Provenance:", fg=typer.colors.CYAN)
+                                    for p in prov_list:
+                                        p_field = p.get("field", "")
+                                        p_val = p.get("value", "")
+                                        p_src = p.get("source", "")
+                                        p_orig = p.get("origin", "")
+                                        typer.echo(f"    • {p_field}: '{p_val}' [source: {p_src}, origin: {p_orig}]")
                                 resp = typer.prompt("  Approve execution? [y/N]", default="n").strip().lower()
                                 approved = resp in ("y", "yes")
 
@@ -778,6 +787,7 @@ def get_app():
         examples: Annotated[int | None, typer.Option("--examples", help="Include few-shot examples (0 or 1)")] = None,
         runs: Annotated[int, typer.Option("--runs", "-r", help="Number of runs per task")] = 1,
         quick: Annotated[bool, typer.Option("--quick", help="Run quick 20-task subset")] = False,
+        laya: Annotated[str, typer.Option("--laya", help="Laya gate mode: off, rules, rules+judge")] = "rules",
         endpoint: Annotated[str | None, typer.Option("--endpoint", help="Custom OpenAI endpoint override")] = None,
         monitor_process: Annotated[str, typer.Option("--monitor-process", help="Process name to monitor memory for")] = "ollama",
     ) -> None:
@@ -807,6 +817,7 @@ def get_app():
             quick=quick,
             endpoint=endpoint,
             monitor_process=monitor_process,
+            laya_mode=laya,
         )
 
         typer.secho(f"\nStarting evaluation on profile '{active}' ({runner_inst.profile.model})...", fg=typer.colors.CYAN, bold=True)

@@ -48,6 +48,8 @@ class ModelProfile(BaseModel):
     structured_output: bool = True
     thinking: Literal["off", "on"] = "off"
     examples: int = Field(default=0, description="Include one example call per tool if 1")
+    laya_judge: Literal["off", "high_risk", "always"] = "off"
+    laya_model: str = ""
     run_timeout: float = 120.0
     planner_max_tokens: int = 400
     timeout_connect: float = 3.0

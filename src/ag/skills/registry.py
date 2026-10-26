@@ -92,6 +92,7 @@ class SkillRegistry:
 
         self.skills: dict[str, Skill] = {}
         self.broken_manifests: list[dict[str, str]] = []
+        self.workspace_dir: Path = Path(workspace_dir).expanduser() if workspace_dir is not None else Path.cwd()
 
     def discover(self) -> None:
         """Scan search directories for skills and manifest.toml files."""

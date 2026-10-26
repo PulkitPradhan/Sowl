@@ -200,7 +200,7 @@ async def test_ws_confirm_flow_and_action_hash_single_use(tmp_path: Path):
                 f"http://127.0.0.1:{port}/ws",
                 headers={"Host": f"127.0.0.1:{port}", "Origin": f"http://127.0.0.1:{port}"},
             ) as ws:
-                await ws.send_json({"type": "run", "task": "Open docs"})
+                await ws.send_json({"type": "run", "task": "Open https://docs.python.org"})
 
                 # Wait for confirm event
                 confirm_evt = None

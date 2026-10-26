@@ -8,6 +8,7 @@ wire_format: toon_in
 planning_mode: single_pass
 structured_output: true
 thinking: "off"
+laya_judge: "high_risk"
 run_timeout: 120.0
 planner_max_tokens: 400
 timeout_connect: 3.0

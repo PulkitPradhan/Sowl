@@ -291,6 +291,24 @@
     confirmActionHash.textContent = sanitize(evt.action_hash || "");
     confirmArgs.textContent = sanitize(JSON.stringify(evt.args || {}, null, 2));
 
+    const provRow = document.getElementById("confirm-provenance-row");
+    const provDiv = document.getElementById("confirm-provenance");
+    if (provDiv && provRow) {
+      provDiv.replaceChildren();
+      const provList = evt.provenance || [];
+      if (provList.length > 0) {
+        provRow.classList.remove("meta-hidden");
+        provList.forEach(function (p) {
+          const item = document.createElement("div");
+          item.className = "provenance-item";
+          item.textContent = sanitize(p.field + ": '" + p.value + "' [" + p.source + " from " + p.origin + "]");
+          provDiv.appendChild(item);
+        });
+      } else {
+        provRow.classList.add("meta-hidden");
+      }
+    }
+
     confirmModal.classList.remove("modal-hidden");
   }
 

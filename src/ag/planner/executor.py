@@ -12,6 +12,10 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field
 
+from ag.laya.gate import LayaDecision, LayaGate
+from ag.laya.judge import LayaJudge
+from ag.laya.post_check import verify_post_conditions
+from ag.laya.provenance import ProvenanceStore
 from ag.models.profile import ModelProfile
 from ag.models.provider import ModelProvider, OpenAIProvider
 from ag.planner.actions import (
@@ -109,6 +113,16 @@ class Executor:
         self.max_steps = max_steps
         self.confirm_timeout = confirm_timeout
         self.planner = Planner(profile=self.profile, provider=self.provider)
+        self.allow_tainted_auto_approve = False
+
+        judge: LayaJudge | None = None
+        judge_setting = getattr(self.profile, "laya_judge", "off")
+        if judge_setting in ("high_risk", "always"):
+            judge_model = getattr(self.profile, "laya_model", "") or self.profile.model
+            judge_profile = self.profile.model_copy(update={"model": judge_model, "thinking": "off"})
+            judge = LayaJudge(provider=OpenAIProvider(judge_profile))
+
+        self.gate = LayaGate(judge=judge)
 
     async def _emit_event(self, event_type: str, run_id: str, data: dict[str, Any]) -> None:
         if self.event_handler is not None:
@@ -123,6 +137,7 @@ class Executor:
         step_idx: int,
         tool: ToolManifest,
         args: dict[str, Any],
+        decision: LayaDecision | None = None,
     ) -> bool:
         """Prompt confirmation gate for non-R0 tools."""
         clean_args = sanitize_value(args)
@@ -137,6 +152,9 @@ class Executor:
             "args": clean_args,
             "risk": tool.risk,
             "hostname": hostname,
+            "provenance": decision.provenance if decision else [],
+            "is_tainted": decision.is_tainted if decision else False,
+            "never_auto_approve": decision.never_auto_approve if decision else False,
         }
 
         await self._emit_event("confirm", run_id, confirm_data)
@@ -172,9 +190,20 @@ class Executor:
             if isinstance(res_val, dict):
                 approval = bool(res_val.get("approved", False))
                 source = str(res_val.get("source", "user"))
+                allow_tainted = bool(res_val.get("allow_tainted", False))
             else:
                 approval = bool(res_val)
                 source = "user"
+                allow_tainted = False
+
+            if (
+                decision
+                and decision.is_tainted
+                and not allow_tainted
+                and not self.allow_tainted_auto_approve
+                and (source in ("policy", "auto_approve") or not isinstance(res_val, dict))
+            ):
+                approval = False
 
             self.trace_logger.log_confirm_decision(
                 run_id=run_id,
@@ -212,6 +241,10 @@ class Executor:
         start_time = time.time()
         self.registry.discover()
         tools = self.registry.get_tools()
+
+        provenance = ProvenanceStore(workspace_root=self.registry.workspace_dir)
+        provenance.add_user_text(task)
+        consecutive_blocks = 0
 
         self.trace_logger.log_init(
             rid,
@@ -392,18 +425,44 @@ class Executor:
                         plan_failed = True
                         break
 
-                    # Risk gate
-                    if tool_manifest.risk == "R3":
-                        return self._finish(
-                            rid, "denied",
-                            f"Tool '{tool_act.tool}' has risk R3 and is strictly prohibited.",
-                            step_records, start_time,
-                        )
+                    # Laya gate evaluation (Layer A rules + Layer B judge)
+                    decision = await self.gate.evaluate_full(
+                        action=action_dict,
+                        manifest=tool_manifest,
+                        provenance=provenance,
+                        workspace_root=self.registry.workspace_dir,
+                        web_port=3180,
+                    )
 
-                    # Non-R0 confirmation gate
-                    if tool_manifest.risk != "R0":
+                    self.trace_logger.log_laya(
+                        rid,
+                        step_idx,
+                        tool_act.tool,
+                        decision.action,
+                        decision.reasons,
+                        decision.provenance,
+                    )
+
+                    if decision.action == "block":
+                        consecutive_blocks += 1
+                        if consecutive_blocks >= 2:
+                            return self._finish(
+                                rid, "blocked",
+                                f"Laya gate blocked execution: {'; '.join(decision.reasons)}",
+                                step_records, start_time,
+                            )
+                        reason_msg = f"Laya Blocked: {'; '.join(decision.reasons)}."
+                        if decision.guidance:
+                            reason_msg += f" {decision.guidance}"
+                        history.append((action_dict, reason_msg))
+                        plan_failed = True
+                        break
+
+                    consecutive_blocks = 0
+
+                    if decision.action == "confirm":
                         approved = await self._request_confirmation(
-                            rid, step_idx, tool_manifest, tool_act.args
+                            rid, step_idx, tool_manifest, tool_act.args, decision=decision
                         )
                         if not approved:
                             return self._finish(
@@ -414,6 +473,36 @@ class Executor:
 
                     # Execute tool via registry
                     exec_result = await self.registry.execute_tool(tool_act.tool, tool_act.args)
+
+                    # Post-checks verification
+                    post_ok, post_err = verify_post_conditions(
+                        tool_act.tool,
+                        tool_manifest,
+                        tool_act.args,
+                        exec_result.get("data"),
+                        workspace_root=self.registry.workspace_dir,
+                    )
+                    if not post_ok:
+                        history.append((action_dict, f"Post-check failure: {post_err}"))
+                        plan_failed = True
+                        break
+
+                    # Update provenance store with tool output
+                    provenance.add_tool_observation(
+                        tool_act.tool,
+                        exec_result.get("data") or exec_result,
+                        origin=f"step_{step_idx}_{tool_act.tool}",
+                        is_tainted_input=decision.is_tainted,
+                    )
+                    if (
+                        tool_act.tool == "contacts.find"
+                        and isinstance(exec_result.get("data"), dict)
+                        and exec_result["data"].get("found")
+                        and exec_result["data"].get("count") == 1
+                    ):
+                        matched = exec_result["data"].get("match", {})
+                        if "email" in matched:
+                            provenance.add_trusted_identifier(matched["email"], origin="contacts.find")
                     formatted_obs = format_observation(
                         exec_result,
                         wire_format=self.profile.wire_format,
