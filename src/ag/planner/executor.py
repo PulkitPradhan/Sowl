@@ -244,6 +244,9 @@ class Executor:
 
         provenance = ProvenanceStore(workspace_root=self.registry.workspace_dir)
         provenance.add_user_text(task)
+        for s in self.registry.list_skills():
+            if hasattr(s, "get_instructions"):
+                provenance.add_skill_text(s.name, s.get_instructions())
         consecutive_blocks = 0
 
         self.trace_logger.log_init(

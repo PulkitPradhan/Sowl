@@ -1,5 +1,5 @@
 name = "instagram"
 summary = "Read-only inspection of saved posts on the user's own Instagram account using generic browser tools"
-triggers = ["instagram saved", "saved reels", "saved posts", "count saved"]
+triggers = ["instagram", "instagram saved", "saved reels", "saved posts", "count saved"]
 examples = ["Count my saved posts on Instagram", "How many saved reels do I have?"]
 tools = []

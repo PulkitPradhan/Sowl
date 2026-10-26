@@ -137,6 +137,39 @@ class ProvenanceStore:
             origin=origin,
         )
 
+    def add_skill_text(self, skill_name: str, text: str) -> None:
+        """Register identifiers found in active skill instructions/manifest as TRUSTED."""
+        if not text:
+            return
+        origin = f"skill:{skill_name}"
+        for match in URL_REGEX.findall(text):
+            norm = normalize_identifier(match, self.workspace_root)
+            self.identifiers[norm] = IdentifierProvenance(
+                field="url",
+                value=match,
+                normalized=norm,
+                source=ProvenanceSource.TRUSTED,
+                origin=origin,
+            )
+        for match in EMAIL_REGEX.findall(text):
+            norm = normalize_identifier(match, self.workspace_root)
+            self.identifiers[norm] = IdentifierProvenance(
+                field="email",
+                value=match,
+                normalized=norm,
+                source=ProvenanceSource.TRUSTED,
+                origin=origin,
+            )
+        for match in FILENAME_REGEX.findall(text):
+            norm = normalize_identifier(match, self.workspace_root)
+            self.identifiers[norm] = IdentifierProvenance(
+                field="path",
+                value=match,
+                normalized=norm,
+                source=ProvenanceSource.TRUSTED,
+                origin=origin,
+            )
+
     def add_tool_observation(
         self,
         tool_name: str,
@@ -231,6 +264,26 @@ class ProvenanceStore:
                     source=ProvenanceSource.USER,
                     origin="user text",
                 )
+
+        # Check if URL service/domain name appears in user prompt
+        if norm.startswith(("http://", "https://")):
+            try:
+                parsed = urllib.parse.urlparse(norm)
+                hostname = parsed.hostname or ""
+                parts = hostname.split(".")
+                for part in parts:
+                    if len(part) >= 3 and part not in ("www", "com", "org", "net", "edu", "gov", "io", "co", "app"):
+                        for u_text in self.user_corpus:
+                            if re.search(r"\b" + re.escape(part) + r"\b", u_text):
+                                return IdentifierProvenance(
+                                    field=field_name,
+                                    value=val,
+                                    normalized=norm,
+                                    source=ProvenanceSource.USER,
+                                    origin=f"user prompt ({part})",
+                                )
+            except Exception:  # noqa: BLE001, S110
+                pass
 
         # Check presence in tool observations
         for obs_text, origin in self.observation_corpus:
