@@ -323,7 +323,12 @@ async def get_browser_session(cdp_url: str | None = None) -> BrowserSession:
             if status["running"] and status["cdp_url"]:
                 url = status["cdp_url"]
             else:
-                url = "http://127.0.0.1:9222"
+                try:
+                    from ag.browser.process import start_browser
+                    start_info = await start_browser()
+                    url = start_info["cdp_url"]
+                except Exception:  # noqa: BLE001
+                    url = "http://127.0.0.1:9222"
         _global_session = BrowserSession(cdp_url=url)
         await _global_session.connect()
     return _global_session

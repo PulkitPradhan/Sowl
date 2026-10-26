@@ -114,6 +114,9 @@ class Executor:
         self.confirm_timeout = confirm_timeout
         self.planner = Planner(profile=self.profile, provider=self.provider)
         self.allow_tainted_auto_approve = False
+        self.auto_approve_tools: set[str] = getattr(
+            self.profile, "auto_approve_tools", None
+        ) or {"browser.goto", "browser.click"}
 
         judge: LayaJudge | None = None
         judge_setting = getattr(self.profile, "laya_judge", "off")
@@ -438,6 +441,7 @@ class Executor:
                         provenance=provenance,
                         workspace_root=self.registry.workspace_dir,
                         web_port=3180,
+                        auto_approve_tools=self.auto_approve_tools,
                     )
 
                     self.trace_logger.log_laya(

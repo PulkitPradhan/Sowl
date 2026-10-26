@@ -151,8 +151,8 @@ class SkillRegistry:
                 is_attached = True
             else:
                 try:
-                    from ag.browser.process import is_browser_attached
-                    is_attached = is_browser_attached()
+                    from ag.browser.process import find_chrome_executable, is_browser_attached
+                    is_attached = is_browser_attached() or (find_chrome_executable() is not None)
                 except Exception:  # noqa: BLE001
                     is_attached = False
         else:
