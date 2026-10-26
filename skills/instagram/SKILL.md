@@ -16,18 +16,17 @@ Instruction-only recipe for viewing and counting saved posts and reels on the us
    - **Step 1: Always Open Instagram First**:
      Do NOT ask any questions before opening the browser. The very first tool call MUST be:
      `browser.goto(url="https://www.instagram.com/")`
-   - **Step 2: Inspect Authentication State via Snapshot**:
+   - **Step 2: Inspect Page via Snapshot**:
      Immediately inspect the page:
      `browser.snapshot()`
    - **Step 3: Check If User Is Logged In**:
      - Inspect the snapshot elements:
      - **If NOT logged in** (e.g. snapshot contains "Log In", "Sign Up", or login form inputs):
-       Return an `ask` action asking the user to log in in the opened browser window:
-       `{"kind": "ask", "question": "Please log in to your Instagram account in the open browser window, then reply here once logged in."}`
+       Return an ask action asking the user to log in in the open browser window.
      - **If logged in** (e.g. snapshot contains navigation links like "Home", "Search", "Explore", "Reels", "Messages", "Profile", or sidebar):
        - If the user's username was provided in the task or answer (e.g. `<username>`), navigate directly to saved:
          `browser.goto(url="https://www.instagram.com/<username>/saved/")`
-       - If username was not provided, look for the "Profile" link ref in the snapshot and click it with `browser.click(ref=...)` to reach the profile and saved collection.
+       - If username was not provided, click the "Profile" link ref from the snapshot with `browser.click(ref=...)` to reach the profile and saved collection.
    - **Step 4: Collect Saved Links**:
      - Extract discovered posts and reels:
        `browser.links(patterns=["/reel/", "/p/"], max=100)`

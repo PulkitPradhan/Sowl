@@ -261,6 +261,50 @@ def get_app():
     daemon_app = typer.Typer(name="daemon", help="Manage background agentd daemon")
     app.add_typer(daemon_app, name="daemon")
 
+    @daemon_app.command(name="start")
+    def daemon_start(
+        detach: Annotated[bool, typer.Option("--detach/--no-detach", help="Run daemon in background")] = True,
+    ) -> None:
+        """Start the agentd daemon process."""
+        import subprocess
+
+        from ag.daemon.server import (
+            AgentDaemon,
+            get_default_socket_path,
+            get_log_dir,
+            register_default_handlers,
+        )
+
+        sock_path = state["socket_path"] or get_default_socket_path()
+        if detach:
+            log_dir = get_log_dir()
+            log_dir.mkdir(parents=True, exist_ok=True)
+            log_file = open(log_dir / "agentd.log", "a", encoding="utf-8")  # noqa: SIM115
+            cmd = [sys.executable, "-m", "ag.daemon.cli", "--socket-path", str(sock_path)]
+            proc = subprocess.Popen(
+                cmd,
+                stdout=log_file,
+                stderr=log_file,
+                start_new_session=True,
+            )
+            typer.secho(f"agentd started in background (PID {proc.pid}) on socket: {sock_path}", fg=typer.colors.GREEN)
+        else:
+            daemon = AgentDaemon(sock_path)
+            register_default_handlers(daemon)
+            typer.echo(f"Starting agentd (pid: {os.getpid()}) on socket: {sock_path}")
+            try:
+                asyncio.run(daemon.serve_forever())
+            except (KeyboardInterrupt, SystemExit):
+                pass
+            finally:
+                typer.echo("\nagentd stopped.")
+
+    @daemon_app.command(name="restart")
+    def daemon_restart() -> None:
+        """Restart running agentd daemon."""
+        daemon_stop()
+        daemon_start(detach=True)
+
     @daemon_app.command(name="status")
     def daemon_status() -> None:
         """Check status of agentd daemon."""
